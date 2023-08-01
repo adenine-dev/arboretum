@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::{
     color_picker::{color_edit_button_srgba, Alpha},
-    ComboBox, Slider, Ui, WidgetText,
+    Ui, WidgetText,
 };
 
 use crate::AppData;
@@ -31,6 +31,8 @@ impl PanelT for StyleEditorPanel {
                 ui.end_row();
             });
         });
+
+        ui.checkbox(&mut app_data.context.white_on_bottom, "white on bottom");
     }
 
     fn title(_app_data: &mut AppData) -> WidgetText {

@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use board::Board;
 use eframe::{egui, CreationContext, NativeOptions};
 use egui::{CentralPanel, Frame, Ui, WidgetText};
 
@@ -13,6 +14,8 @@ use context::Context;
 
 mod ui;
 use ui::*;
+
+mod board;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -100,6 +103,8 @@ impl App {
                 context: Context {
                     player_1: "player 1".into(),
                     player_2: "player 2".into(),
+                    white_on_bottom: true,
+                    board: Board::default(),
                     theme: Theme::default(),
                 },
                 tabs: TabData {
