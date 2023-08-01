@@ -1,3 +1,6 @@
+pub const RANKS: [&str; 8] = ["1", "2", "3", "4", "5", "6", "7", "8"];
+pub const FILES: [&str; 8] = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
 /// 8 bits designating the piece type:
 /// the bits are `wbkqrbnp` where:
 /// - `w`: set if the piece is white
@@ -38,6 +41,13 @@ impl Piece {
     pub fn is_black(self) -> bool {
         let mask = 0b01_000000;
         (self.0 & mask) == mask
+    }
+
+    pub fn is_color(self, color: Color) -> bool {
+        match color {
+            Color::Black => self.is_black(),
+            Color::White => self.is_white(),
+        }
     }
 
     pub fn is_king(self) -> bool {
@@ -162,17 +172,194 @@ impl std::fmt::Display for Piece {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Color {
+    Black,
+    White,
+}
+
+/// 8 bits designating how players can castle. Only 4 are used
+/// the bits are `___KQkq` where:
+/// - `_` is an unused bit
+/// - `K` set if white can castle kingside
+/// - `Q` set if white can castle queenside
+/// - `k` set if black can castle kingside
+/// - `q` set if black can castle queenside`
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct CastlingAvailability(u8);
+
+impl core::ops::BitOr for CastlingAvailability {
+    type Output = CastlingAvailability;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        CastlingAvailability(self.0 | rhs.0)
+    }
+}
+
+impl core::ops::BitOrAssign for CastlingAvailability {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0
+    }
+}
+
+impl core::ops::BitAnd for CastlingAvailability {
+    type Output = CastlingAvailability;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        CastlingAvailability(self.0 & rhs.0)
+    }
+}
+
+impl core::ops::BitAndAssign for CastlingAvailability {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0
+    }
+}
+
+impl core::ops::BitXor for CastlingAvailability {
+    type Output = CastlingAvailability;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        CastlingAvailability(self.0 ^ rhs.0)
+    }
+}
+
+impl core::ops::BitXorAssign for CastlingAvailability {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0
+    }
+}
+
+impl CastlingAvailability {
+    pub const WHITE_KINGSIDE: CastlingAvailability = CastlingAvailability(0b0000_1000);
+    pub const WHITE_QUEENSIDE: CastlingAvailability = CastlingAvailability(0b0000_0100);
+    pub const BLACK_KINGSIDE: CastlingAvailability = CastlingAvailability(0b0000_0010);
+    pub const BLACK_QUEENSIDE: CastlingAvailability = CastlingAvailability(0b0000_0001);
+    pub const ALL: CastlingAvailability = CastlingAvailability(0b0000_1111);
+    pub const NONE: CastlingAvailability = CastlingAvailability(0b0000_0000);
+}
+
+/// Represents a square on the board. Stored as a rank-major index
+/// Values >= 64 are invalid.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Square(u8);
+
+impl Square {
+    pub fn new(idx: u8) -> Self {
+        Square(idx)
+    }
+
+    /// Creates a new square from a rank and file, both indexed from 0-7 corresponding to 1-8 and a-h respectively.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if either rank or file is >= 8
+    pub fn from_rank_file(rank: u8, file: u8) -> Self {
+        debug_assert!(rank < 8 && file < 8);
+        Square(rank * 8 + file)
+    }
+
+    /// Creates a new square from algebraic notation.
+    pub fn from_algebraic(position: &str) -> Self {
+        if !position.is_ascii() || position.len() != 2 {
+            return Self::invalid();
+        }
+        let mut bytes = position.bytes();
+
+        let file = bytes.next().unwrap() - b'a';
+        let rank = bytes.next().unwrap() - b'1';
+
+        Self::from_rank_file(rank, file)
+    }
+
+    /// Creates a new invalid square
+    pub fn invalid() -> Self {
+        Square(64)
+    }
+
+    /// Returns true if the square is valid
+    pub fn valid(self) -> bool {
+        64 > self.0
+    }
+
+    /// Returns the rank of the square
+    pub fn rank(self) -> u8 {
+        self.0 / 8
+    }
+
+    /// Returns the file of the square
+    pub fn file(self) -> u8 {
+        self.0 % 8
+    }
+}
+
+impl ToString for Square {
+    fn to_string(&self) -> String {
+        if !self.valid() {
+            return "invalid square".to_owned();
+        }
+
+        let rank = self.rank();
+        let file = self.file();
+
+        RANKS[rank as usize].to_owned() + FILES[file as usize]
+    }
+}
+
+/// 16 bits representing a move
+/// the bits are `FFFFFFTTTTTTKBRQ` where:
+/// - `FFFFFF` is the index of the from square
+/// - `TTTTTT` is the index of the to square
+/// - `K` is set if a pawn is promoting to a knight
+/// - `B` is set if a pawn is promoting to a bishop
+/// - `R` is set if a pawn is promoting to a rook
+/// - `Q` is set if a pawn is promoting to a queen
+///
+/// Castling is represented by the from and to squares being the king's.
+///
+/// Only one of `KBRQ` may be set.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Move(u16);
+
+impl Move {
+    pub fn new(from: Square, to: Square) -> Self {
+        assert!(from.valid() && to.valid());
+        let from = from.0 as u16;
+        let to = to.0 as u16;
+
+        Self(from << 10 | to << 4)
+    }
+
+    pub fn from(self) -> Square {
+        Square::new((self.0 >> 10 & 0b111111) as u8)
+    }
+
+    pub fn to(self) -> Square {
+        Square::new((self.0 >> 4 & 0b111111) as u8)
+    }
+}
+
 pub struct Board {
     pieces: [Piece; 64],
+    pub castling_availability: CastlingAvailability,
+    pub active_color: Color,
+    // if there is no en passant target then this square is invalid
+    pub en_passant_target: Square,
+    pub halfmove_clock: u8,
+    pub fullmoves: u32,
 }
 
 impl Board {
+    /// Creates a board from a fen string
     fn from_fen(fen: &str) -> Self {
         let mut pieces = [Piece::EMPTY; 64];
 
+        let mut field_iter = fen.split(' ');
+
         let mut file = 0;
         let mut rank = 7;
-        for c in fen.chars() {
+        for c in field_iter
+            .next()
+            .expect("invalid fen string could not get piece placement data")
+            .chars()
+        {
             let p = match c {
                 'r' => Piece::BLACK_ROOK,
                 'n' => Piece::BLACK_KNIGHT,
@@ -209,7 +396,65 @@ impl Board {
             file += 1;
         }
 
-        Self { pieces }
+        let active_color = field_iter
+            .next()
+            .expect("invalid fen string could not get active color");
+        let active_color = match active_color {
+            "w" => Color::White,
+            "b" => Color::Black,
+            _ => panic!("invalid fen string, active color is invalid. expected `b` or `w` found `{active_color}`"),
+        };
+
+        let castling_availability = field_iter
+            .next()
+            .expect("invalid fen string could not get castling availability");
+
+        let castling_availability = {
+            let mut ca = CastlingAvailability::NONE;
+            if castling_availability != "-" {
+                for c in castling_availability.chars() {
+                    match c {
+                        'K' => ca |= CastlingAvailability::WHITE_KINGSIDE,
+                        'Q' => ca |= CastlingAvailability::WHITE_QUEENSIDE,
+                        'k' => ca |= CastlingAvailability::BLACK_KINGSIDE,
+                        'q' => ca |= CastlingAvailability::BLACK_QUEENSIDE,
+                        _ => panic!("invalid fen string, castling availability is invalid. expected some combination of `K`, `Q`, `k`, `q` found `{c}`")
+                    }
+                }
+            }
+
+            ca
+        };
+
+        let en_passant_target = field_iter
+            .next()
+            .expect("invalid fen string could not get en passant target square");
+        let en_passant_target = if en_passant_target == "-" {
+            Square::invalid()
+        } else {
+            Square::from_algebraic(en_passant_target)
+        };
+
+        let halfmove_clock = field_iter
+            .next()
+            .expect("invalid fen string could not get halfmove clock")
+            .parse()
+            .expect("invalid fen string expected number for halfmove clock");
+
+        let fullmoves = field_iter
+            .next()
+            .expect("invalid fen string could not get fullmove number")
+            .parse()
+            .expect("invalid fen string expected number for fullmove number");
+
+        Self {
+            pieces,
+            active_color,
+            castling_availability,
+            en_passant_target,
+            halfmove_clock,
+            fullmoves,
+        }
     }
 
     /// Returns the piece at rank, file, both indexed from 0-7 corresponding to 1-8 and a-h respectively
@@ -225,7 +470,7 @@ impl Board {
 
 impl Default for Board {
     fn default() -> Self {
-        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
+        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     }
 }
 
@@ -297,6 +542,26 @@ mod test {
         for rank in 2..=5 {
             for file in 0..7 {
                 assert!(board.get(rank, file).is_empty());
+            }
+        }
+
+        assert_eq!(board.active_color, Color::White);
+
+        assert_eq!(board.castling_availability, CastlingAvailability::ALL);
+
+        assert!(!board.en_passant_target.valid());
+
+        assert_eq!(board.halfmove_clock, 0);
+        assert_eq!(board.fullmoves, 1);
+    }
+
+    #[test]
+    fn square_algebraic_notation_parsing_works() {
+        for (r, &rank) in RANKS.iter().enumerate() {
+            for (f, &file) in FILES.iter().enumerate() {
+                let square = Square::from_algebraic(&(file.to_owned() + rank));
+                assert_eq!(square.rank(), r as u8);
+                assert_eq!(square.file(), f as u8);
             }
         }
     }

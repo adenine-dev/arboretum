@@ -4,7 +4,10 @@ use eframe::{
     epaint::{FontFamily, FontId, Pos2, Rect, Vec2},
 };
 
-use crate::AppData;
+use crate::{
+    board::{FILES, RANKS},
+    AppData,
+};
 
 use super::PanelT;
 
@@ -62,23 +65,19 @@ impl PanelT for BoardPanel {
 
                 // paint rank/file indicators
                 if rank == rank_file_indicator_rank_file {
-                    let files = ["A", "B", "C", "D", "E", "F", "G", "H"];
-
                     painter.text(
                         max,
                         Align2::RIGHT_BOTTOM,
-                        files[file],
+                        FILES[file],
                         FontId::new(size / 4.0, FontFamily::Proportional),
                         fg,
                     );
                 }
                 if file == rank_file_indicator_rank_file {
-                    let ranks = ["1", "2", "3", "4", "5", "6", "7", "8"];
-
                     painter.text(
                         min,
                         Align2::LEFT_TOP,
-                        ranks[rank],
+                        RANKS[rank],
                         FontId::new(size / 4.0, FontFamily::Proportional),
                         fg,
                     );
