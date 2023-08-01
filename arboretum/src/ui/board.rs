@@ -11,25 +11,25 @@ use super::PanelT;
 pub struct BoardPanel {}
 
 impl PanelT for BoardPanel {
-    fn update(_app_data: &mut AppData, ui: &mut Ui) {
+    fn update(app_data: &mut AppData, ui: &mut Ui) {
         let clip_rect = ui.available_rect_before_wrap();
         let painter = Painter::new(ui.ctx().clone(), ui.layer_id(), clip_rect);
 
         let size = clip_rect.size().min_elem() / 8.0;
         for rank in (0..8).rev() {
             for file in 0..8 {
+                let bg = app_data.context.theme.dark_square_color;
+                let fg = app_data.context.theme.light_square_color;
+                let (bg, fg) = if (rank + file) % 2 == 0 {
+                    (fg, bg)
+                } else {
+                    (bg, fg)
+                };
+
                 let min = Pos2::new(rank as f32 * size, file as f32 * size)
                     + ui.next_widget_position().to_vec2();
                 let max = min + Vec2::new(size, size);
-                painter.rect_filled(
-                    Rect::from_two_pos(min, max),
-                    0.0,
-                    if (rank + file) % 2 == 0 {
-                        Color32::WHITE
-                    } else {
-                        Color32::BLACK
-                    },
-                );
+                painter.rect_filled(Rect::from_two_pos(min, max), 0.0, bg);
 
                 if file == 7 {
                     let ranks = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -39,11 +39,7 @@ impl PanelT for BoardPanel {
                         Align2::RIGHT_BOTTOM,
                         ranks[rank],
                         FontId::new(size / 4.0, FontFamily::Proportional),
-                        if (rank + file) % 2 == 1 {
-                            Color32::WHITE
-                        } else {
-                            Color32::BLACK
-                        },
+                        fg,
                     );
                 }
                 if rank == 0 {
@@ -54,11 +50,7 @@ impl PanelT for BoardPanel {
                         Align2::LEFT_TOP,
                         ranks[file],
                         FontId::new(size / 4.0, FontFamily::Proportional),
-                        if (rank + file) % 2 == 1 {
-                            Color32::WHITE
-                        } else {
-                            Color32::BLACK
-                        },
+                        fg,
                     );
                 }
             }

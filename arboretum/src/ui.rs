@@ -1,4 +1,7 @@
-use eframe::egui::{Ui, WidgetText};
+use eframe::{
+    egui::{Ui, WidgetText},
+    epaint::Color32,
+};
 use std::fmt::Display;
 
 mod board;
@@ -63,5 +66,19 @@ dispatched!(
 impl Display for Panel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+pub struct Theme {
+    pub light_square_color: Color32,
+    pub dark_square_color: Color32,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            dark_square_color: Color32::from_rgb(35, 40, 48),
+            light_square_color: Color32::from_rgb(225, 202, 255),
+        }
     }
 }

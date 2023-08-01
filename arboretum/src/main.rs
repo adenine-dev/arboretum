@@ -29,8 +29,6 @@ fn main() -> eframe::Result<()> {
 pub struct TabData {
     open: HashSet<Panel>,
     to_be_added: Vec<(NodeIndex, Panel)>,
-
-    style: Option<Style>,
 }
 
 pub struct AppData {
@@ -102,12 +100,11 @@ impl App {
                 context: Context {
                     player_1: "player 1".into(),
                     player_2: "player 2".into(),
+                    theme: Theme::default(),
                 },
                 tabs: TabData {
                     open: open_tabs,
                     to_be_added: vec![],
-
-                    style: None,
                 },
             },
             tree,
@@ -132,12 +129,7 @@ impl eframe::App for App {
         CentralPanel::default()
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0.))
             .show(ctx, |ui| {
-                let mut style = self
-                    .app_data
-                    .tabs
-                    .style
-                    .get_or_insert(Style::from_egui(ui.style()))
-                    .clone();
+                let mut style = Style::from_egui(ui.style());
                 style.tabs.fill_tab_bar = true;
 
                 DockArea::new(&mut self.tree)
