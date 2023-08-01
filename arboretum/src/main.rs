@@ -98,13 +98,18 @@ impl App {
                 }
             }
         }
+
+        let board = Board::default();
         Self {
             app_data: AppData {
                 context: Context {
                     player_1: "player 1".into(),
                     player_2: "player 2".into(),
+
+                    current_moves: board.moves(),
+                    board,
+
                     white_on_bottom: true,
-                    board: Board::default(),
                     theme: Theme::default(),
                 },
                 tabs: TabData {

@@ -174,8 +174,38 @@ impl std::fmt::Display for Piece {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
-    Black,
     White,
+    Black,
+}
+
+impl Color {
+    pub fn opponent(self) -> Self {
+        match self {
+            Color::Black => Color::White,
+            Color::White => Color::Black,
+        }
+    }
+
+    pub fn double_push_pawn_rank(self) -> u8 {
+        match self {
+            Color::Black => 6,
+            Color::White => 1,
+        }
+    }
+
+    pub fn promotion_rank(self) -> u8 {
+        match self {
+            Color::Black => 0,
+            Color::White => 7,
+        }
+    }
+
+    pub fn pawn_move_direction(self) -> i8 {
+        match self {
+            Color::Black => -1,
+            Color::White => 1,
+        }
+    }
 }
 
 /// 8 bits designating how players can castle. Only 4 are used
@@ -288,19 +318,53 @@ impl Square {
     pub fn file(self) -> u8 {
         self.0 % 8
     }
+
+    /// Returns a new square moved by the specified number of ranks and files if it is valid.
+    pub fn mov(self, d_rank: i8, d_file: i8) -> Option<Self> {
+        let rank = self.rank() as i8;
+        let file = self.file() as i8;
+
+        let new_rank = rank + d_rank;
+        let new_file = file + d_file;
+
+        if !(0..8).contains(&new_rank) || !(0..8).contains(&new_file) {
+            return None;
+        }
+
+        Some(Self::from_rank_file(new_rank as u8, new_file as u8))
+    }
 }
 
-impl ToString for Square {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.valid() {
-            return "invalid square".to_owned();
+            return f.write_str("invalid square");
         }
 
         let rank = self.rank();
         let file = self.file();
 
-        RANKS[rank as usize].to_owned() + FILES[file as usize]
+        f.write_str(&(FILES[file as usize].to_owned() + RANKS[rank as usize]))
     }
+}
+
+/// represents a promotion target
+/// the bits are `____KBRQ` where:
+/// - `_` is an unused bit
+/// - `K` is set if a pawn is promoting to a knight
+/// - `B` is set if a pawn is promoting to a bishop
+/// - `R` is set if a pawn is promoting to a rook
+/// - `Q` is set if a pawn is promoting to a queen
+///
+/// at most one of KBRQ may be set.
+pub struct PromotionTarget(u8);
+
+impl PromotionTarget {
+    pub const NONE: PromotionTarget = Self(0b00000000);
+    pub const KNIGHT: PromotionTarget = Self(0b00001000);
+    pub const BISHOP: PromotionTarget = Self(0b00000100);
+    pub const ROOK: PromotionTarget = Self(0b00000010);
+    pub const QUEEN: PromotionTarget = Self(0b00000001);
 }
 
 /// 16 bits representing a move
@@ -314,7 +378,7 @@ impl ToString for Square {
 ///
 /// Castling is represented by the from and to squares being the king's.
 ///
-/// Only one of `KBRQ` may be set.
+/// At most one of `KBRQ` may be set.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Move(u16);
 
@@ -327,6 +391,18 @@ impl Move {
         Self(from << 10 | to << 4)
     }
 
+    pub fn new_promotion(from: Square, to: Square, promotion_target: PromotionTarget) -> Self {
+        assert!(from.valid() && to.valid());
+        let from = from.0 as u16;
+        let to = to.0 as u16;
+
+        Self(
+            ((from << 10) & 0b111111)
+                | ((to << 4) & 0b111111)
+                | (promotion_target.0 as u16 & 0b1111),
+        )
+    }
+
     pub fn from(self) -> Square {
         Square::new((self.0 >> 10 & 0b111111) as u8)
     }
@@ -334,8 +410,23 @@ impl Move {
     pub fn to(self) -> Square {
         Square::new((self.0 >> 4 & 0b111111) as u8)
     }
+
+    pub fn is_promotion(self) -> bool {
+        self.0 & 0b1111 != 0
+    }
+
+    pub fn get_promotion_target(self) -> PromotionTarget {
+        PromotionTarget((self.0 & 0b1111) as u8)
+    }
 }
 
+impl std::fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&(self.from().to_string() + " -> " + &self.to().to_string()))
+    }
+}
+
+#[derive(Debug)]
 pub struct Board {
     pieces: [Piece; 64],
     pub castling_availability: CastlingAvailability,
@@ -466,6 +557,76 @@ impl Board {
     pub fn get(&self, rank: u8, file: u8) -> Piece {
         self.pieces[rank as usize * 8 + file as usize]
     }
+
+    fn extend_pseudo_legal_king_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
+        for r in -1..=1 {
+            for f in -1..=1 {
+                if let Some(to) = from_square.mov(r, f) {
+                    if !self.pieces[to.0 as usize].is_color(self.active_color) {
+                        pseudo_legal.push(Move::new(from_square, to));
+                    }
+                }
+            }
+        }
+    }
+
+    fn extend_pseudo_legal_pawn_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
+        let direction = self.active_color.pawn_move_direction();
+
+        for f in -1..=1 {
+            if let Some(to) = from_square.mov(direction, f) {
+                if !self.pieces[to.0 as usize].is_color(self.active_color) {
+                    // can only capture diagonally
+                    if (f == 0 && self.pieces[to.0 as usize].is_empty())
+                        || (f != 0
+                            && (self.pieces[to.0 as usize].is_color(self.active_color.opponent())
+                                || self.en_passant_target == to))
+                    {
+                        if to.rank() == self.active_color.promotion_rank() {
+                            pseudo_legal.extend([
+                                Move::new_promotion(from_square, to, PromotionTarget::QUEEN),
+                                Move::new_promotion(from_square, to, PromotionTarget::ROOK),
+                                Move::new_promotion(from_square, to, PromotionTarget::BISHOP),
+                                Move::new_promotion(from_square, to, PromotionTarget::KNIGHT),
+                            ]);
+                        } else {
+                            pseudo_legal.push(Move::new(from_square, to));
+                        }
+                    }
+                }
+            }
+        }
+
+        if self.active_color.double_push_pawn_rank() == from_square.rank() {
+            if let Some(to) = from_square.mov(2 * direction, 0) {
+                if self.pieces[to.0 as usize].is_empty()
+                    && self.pieces
+                        [(to.0 as i8 - (8 * self.active_color.pawn_move_direction())) as usize]
+                        .is_empty()
+                {
+                    pseudo_legal.push(Move::new(from_square, to));
+                }
+            }
+        }
+    }
+
+    pub fn moves(&self) -> Vec<Move> {
+        let mut pseudo_legal = vec![];
+
+        for (idx, piece) in self.pieces.iter().enumerate() {
+            let idx = idx;
+            let from_square = Square::new(idx as u8);
+            if piece.is_color(self.active_color) {
+                if piece.is_king() {
+                    self.extend_pseudo_legal_king_moves_at(&mut pseudo_legal, from_square);
+                } else if piece.is_pawn() {
+                    self.extend_pseudo_legal_pawn_moves_at(&mut pseudo_legal, from_square);
+                }
+            }
+        }
+
+        pseudo_legal
+    }
 }
 
 impl Default for Board {
@@ -556,13 +717,48 @@ mod test {
     }
 
     #[test]
-    fn square_algebraic_notation_parsing_works() {
+    fn square_algebraic_notation_parsing_and_stringify() {
         for (r, &rank) in RANKS.iter().enumerate() {
             for (f, &file) in FILES.iter().enumerate() {
-                let square = Square::from_algebraic(&(file.to_owned() + rank));
+                let algebraic = file.to_owned() + rank;
+                let square = Square::from_algebraic(&algebraic);
                 assert_eq!(square.rank(), r as u8);
                 assert_eq!(square.file(), f as u8);
+                assert_eq!(square.to_string(), algebraic);
             }
         }
+    }
+
+    fn expect_move_len(fen: &str, len: usize) {
+        let board = Board::from_fen(fen);
+        let moves = board.moves();
+        assert_eq!(moves.len(), len, "for fen `{fen}`");
+    }
+
+    #[test]
+    fn move_generation_king() {
+        expect_move_len("8/8/8/8/3K4/8/8/8 w - - 0 1", 8);
+        expect_move_len("8/8/8/4r3/3KP3/8/8/8 w - - 0 1", 7);
+        expect_move_len("8/8/3r4/2rPr3/2PKP3/8/8/8 w - - 0 1", 5);
+        expect_move_len("8/8/8/8/8/8/8/K7 w - - 0 1", 3);
+    }
+
+    #[test]
+    fn move_generation_pawn() {
+        expect_move_len("8/8/8/8/8/8/4P3/8 w - - 0 1", 2);
+        expect_move_len("8/8/8/8/8/8/PPPPPPPP/8 w - - 0 1", 16);
+        expect_move_len("8/8/8/8/8/4p3/4P3/8 w - - 0 1", 0);
+        expect_move_len("8/8/8/8/4p3/8/4P3/8 b - - 0 1", 1);
+        expect_move_len("8/8/8/8/8/3p1p2/4P3/8 w - - 0 1", 4);
+        expect_move_len("8/2P5/3P4/4P3/5P2/6P1/7P/8 w - - 0 1", 10);
+        expect_move_len("8/8/8/1Pp5/8/8/8/8 w - c6 0 1", 2);
+
+        expect_move_len("8/4p3/8/8/8/8/8/8 b - - 0 1", 2);
+        expect_move_len("8/pppppppp/8/8/8/8/8/8 b - - 0 1", 16);
+        expect_move_len("8/5p2/5P2/8/8/8/8/8 b - - 0 1", 0);
+        expect_move_len("8/5p2/8/5P2/8/8/8/8 b - - 0 1", 1);
+        expect_move_len("8/3p4/2P1P3/8/8/8/8/8 b - - 0 1", 4);
+        expect_move_len("8/1p6/2p5/3p4/4p3/5p2/6p1/8 b - - 0 1", 10);
+        expect_move_len("8/8/8/8/5Pp1/8/8/8 b - f3 0 1", 2);
     }
 }
