@@ -47,6 +47,7 @@ impl TabViewer for AppData {
     type Tab = Panel;
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
+        ui.next_widget_position();
         tab.update(self, ui);
     }
 
