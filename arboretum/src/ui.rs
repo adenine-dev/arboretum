@@ -72,13 +72,18 @@ impl Display for Panel {
 pub struct Theme {
     pub light_square_color: Color32,
     pub dark_square_color: Color32,
+
+    pub white_piece_color: Color32,
+    pub black_piece_color: Color32,
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            dark_square_color: Color32::from_rgb(35, 40, 48),
-            light_square_color: Color32::from_rgb(225, 202, 255),
+            dark_square_color: Color32::from_rgb(102, 79, 102),
+            light_square_color: Color32::from_rgb(164, 142, 164),
+            white_piece_color: Color32::WHITE,
+            black_piece_color: Color32::BLACK,
         }
     }
 }

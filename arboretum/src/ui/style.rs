@@ -29,6 +29,22 @@ impl PanelT for StyleEditorPanel {
                     Alpha::OnlyBlend,
                 );
                 ui.end_row();
+
+                ui.label("black pieces:");
+                color_edit_button_srgba(
+                    ui,
+                    &mut app_data.context.theme.black_piece_color,
+                    Alpha::OnlyBlend,
+                );
+                ui.end_row();
+
+                ui.label("white pieces:");
+                color_edit_button_srgba(
+                    ui,
+                    &mut app_data.context.theme.white_piece_color,
+                    Alpha::OnlyBlend,
+                );
+                ui.end_row();
             });
         });
 

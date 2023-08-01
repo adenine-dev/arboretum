@@ -45,22 +45,18 @@ impl PanelT for BoardPanel {
                 painter.rect_filled(Rect::from_two_pos(min, max), 0.0, bg);
 
                 // paint piece
-                if !app_data
-                    .context
-                    .board
-                    .get(rank as u8, file as u8)
-                    .is_empty()
-                {
+                let piece = app_data.context.board.get(rank as u8, file as u8);
+                if !piece.is_empty() {
                     painter.text(
                         min + Vec2::splat(size) / 2.0,
                         Align2::CENTER_CENTER,
-                        app_data
-                            .context
-                            .board
-                            .get(rank as u8, file as u8)
-                            .to_string(),
-                        FontId::new(size / 2.0, FontFamily::Proportional),
-                        fg,
+                        piece.to_black_figurine(),
+                        FontId::new(size * 0.66, FontFamily::Proportional),
+                        if piece.is_black() {
+                            app_data.context.theme.black_piece_color
+                        } else {
+                            app_data.context.theme.white_piece_color
+                        },
                     );
                 }
 

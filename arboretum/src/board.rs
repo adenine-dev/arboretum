@@ -74,7 +74,7 @@ impl Piece {
         self.0 == 0
     }
 
-    pub fn to_string(self) -> &'static str {
+    pub fn to_algebraic(self) -> &'static str {
         match self {
             Piece::BLACK_ROOK => "r",
             Piece::BLACK_KNIGHT => "n",
@@ -92,8 +92,73 @@ impl Piece {
 
             Piece::EMPTY => "",
 
-            _ => "INVALID PIECE",
+            _ => panic!("invalid piece {self}"),
         }
+    }
+
+    /// Returns the figurine algebraic notation symbol for the given piece.
+    pub fn to_figurine(self) -> &'static str {
+        match self {
+            Piece::BLACK_ROOK => "♜",
+            Piece::BLACK_KNIGHT => "♞",
+            Piece::BLACK_BISHOP => "♝",
+            Piece::BLACK_QUEEN => "♛",
+            Piece::BLACK_KING => "♚",
+            Piece::BLACK_PAWN => "♟",
+
+            Piece::WHITE_ROOK => "♖",
+            Piece::WHITE_KNIGHT => "♘",
+            Piece::WHITE_BISHOP => "♗",
+            Piece::WHITE_QUEEN => "♕",
+            Piece::WHITE_KING => "♔",
+            Piece::WHITE_PAWN => "♙",
+
+            Piece::EMPTY => "",
+
+            _ => panic!("invalid piece {self}"),
+        }
+    }
+
+    /// Returns the figurine algebraic notation symbol for the given piece, but
+    /// all pieces are black, useful for displaying pieces that will be colored
+    /// later.
+    pub fn to_black_figurine(self) -> &'static str {
+        match self {
+            Piece::BLACK_ROOK | Piece::WHITE_ROOK => "♜",
+            Piece::BLACK_KNIGHT | Piece::WHITE_KNIGHT => "♞",
+            Piece::BLACK_BISHOP | Piece::WHITE_BISHOP => "♝",
+            Piece::BLACK_QUEEN | Piece::WHITE_QUEEN => "♛",
+            Piece::BLACK_KING | Piece::WHITE_KING => "♚",
+            Piece::BLACK_PAWN | Piece::WHITE_PAWN => "♟",
+
+            Piece::EMPTY => "",
+
+            _ => panic!("invalid piece {self}"),
+        }
+    }
+}
+
+impl std::fmt::Display for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match *self {
+            Piece::BLACK_ROOK => "black rook",
+            Piece::BLACK_KNIGHT => "black knight",
+            Piece::BLACK_BISHOP => "black bishop",
+            Piece::BLACK_QUEEN => "black queen",
+            Piece::BLACK_KING => "black king",
+            Piece::BLACK_PAWN => "black pawn",
+
+            Piece::WHITE_ROOK => "white rook",
+            Piece::WHITE_KNIGHT => "white knight",
+            Piece::WHITE_BISHOP => "white bishop",
+            Piece::WHITE_QUEEN => "white queen",
+            Piece::WHITE_KING => "white king",
+            Piece::WHITE_PAWN => "white pawn",
+
+            Piece::EMPTY => "empty",
+
+            _ => "Invalid Piece",
+        })
     }
 }
 
