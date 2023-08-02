@@ -33,6 +33,13 @@ impl Piece {
 
     pub const EMPTY: Piece = Piece(0b00_000000);
 
+    pub fn rook(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_ROOK,
+            Color::White => Self::WHITE_ROOK,
+        }
+    }
+
     pub fn is_white(self) -> bool {
         let mask = 0b10_000000;
         (self.0 & mask) == mask
@@ -214,6 +221,83 @@ impl Color {
             Color::White => 1,
         }
     }
+
+    pub fn kingside_castle_path(self) -> [Square; 2] {
+        [
+            self.kingside_castle_position_king(),
+            self.kingside_castle_position_rook(),
+        ]
+    }
+
+    pub fn kingside_castle_position_king(&self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 6),
+            Color::White => Square::from_rank_file(0, 6),
+        }
+    }
+
+    pub fn kingside_castle_position_rook(&self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 5),
+            Color::White => Square::from_rank_file(0, 5),
+        }
+    }
+
+    pub fn kingside_rook_position(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 7),
+            Color::White => Square::from_rank_file(0, 7),
+        }
+    }
+
+    pub fn queenside_castle_path(self) -> [Square; 2] {
+        [
+            self.queenside_castle_position_king(),
+            self.queenside_castle_position_rook(),
+        ]
+    }
+
+    pub fn queenside_castle_position_king(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 2),
+            Color::White => Square::from_rank_file(0, 2),
+        }
+    }
+
+    pub fn queenside_castle_position_rook(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 3),
+            Color::White => Square::from_rank_file(0, 3),
+        }
+    }
+
+    pub fn queenside_rook_position(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 0),
+            Color::White => Square::from_rank_file(0, 0),
+        }
+    }
+
+    pub fn rook_position(self, side: Side) -> Square {
+        match side {
+            Side::King => self.kingside_rook_position(),
+            Side::Queen => self.queenside_rook_position(),
+        }
+    }
+
+    pub fn castle_position_rook(self, castle_side: Side) -> Square {
+        match castle_side {
+            Side::King => self.kingside_castle_position_rook(),
+            Side::Queen => self.queenside_castle_position_rook(),
+        }
+    }
+
+    pub fn castle_position_king(self, castle_side: Side) -> Square {
+        match castle_side {
+            Side::King => self.kingside_castle_position_king(),
+            Side::Queen => self.queenside_castle_position_king(),
+        }
+    }
 }
 
 /// 8 bits designating how players can castle. Only 4 are used
@@ -272,6 +356,24 @@ impl CastlingAvailability {
     pub const BLACK_QUEENSIDE: CastlingAvailability = CastlingAvailability(0b0000_0001);
     pub const ALL: CastlingAvailability = CastlingAvailability(0b0000_1111);
     pub const NONE: CastlingAvailability = CastlingAvailability(0b0000_0000);
+
+    pub fn contains(self, other: Self) -> bool {
+        (self & other) == other
+    }
+
+    pub fn kingside_color(self, color: Color) -> bool {
+        match color {
+            Color::Black => self.contains(Self::BLACK_KINGSIDE),
+            Color::White => self.contains(Self::WHITE_KINGSIDE),
+        }
+    }
+
+    pub fn queenside_color(self, color: Color) -> bool {
+        match color {
+            Color::Black => self.contains(Self::BLACK_QUEENSIDE),
+            Color::White => self.contains(Self::WHITE_QUEENSIDE),
+        }
+    }
 }
 
 /// Represents a square on the board. Stored as a rank-major index
@@ -356,6 +458,11 @@ impl std::fmt::Display for Square {
     }
 }
 
+pub enum Side {
+    King,
+    Queen,
+}
+
 /// represents move flags
 /// the bits are `____FFFF` where:
 /// - `_` is an unused bit
@@ -391,6 +498,15 @@ impl MoveFlags {
 
     pub fn is_en_passant(self) -> bool {
         self == Self::EN_PASSANT
+    }
+
+    fn castle_side(self) -> Side {
+        assert!(self.is_castle());
+        if self == Self::CASTLE_KINGSIDE {
+            Side::King
+        } else {
+            Side::Queen
+        }
     }
 }
 
@@ -586,6 +702,7 @@ impl Board {
     }
 
     fn extend_pseudo_legal_king_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
+        // basic king movement
         for r in -1..=1 {
             for f in -1..=1 {
                 if let Some(to) = from_square.mov(r, f) {
@@ -594,6 +711,37 @@ impl Board {
                     }
                 }
             }
+        }
+
+        // castling
+        if self.castling_availability.kingside_color(self.active_color)
+            && self
+                .active_color
+                .kingside_castle_path()
+                .into_iter()
+                .all(|square| self.at(square).is_empty())
+        {
+            pseudo_legal.push(Move::new_with_flags(
+                from_square,
+                self.active_color.kingside_castle_position_king(),
+                MoveFlags::CASTLE_KINGSIDE,
+            ))
+        }
+
+        if self
+            .castling_availability
+            .queenside_color(self.active_color)
+            && self
+                .active_color
+                .queenside_castle_path()
+                .into_iter()
+                .all(|square| self.at(square).is_empty())
+        {
+            pseudo_legal.push(Move::new_with_flags(
+                from_square,
+                self.active_color.queenside_castle_position_king(),
+                MoveFlags::CASTLE_QUEENSIDE,
+            ))
         }
     }
 
@@ -745,6 +893,8 @@ impl Board {
     pub fn apply_move(&self, mov: Move) -> Board {
         let mut ret = *self;
 
+        ret.active_color = self.active_color.opponent();
+
         if self.active_color == Color::Black {
             ret.fullmoves += 1;
         }
@@ -756,6 +906,7 @@ impl Board {
             ret.halfmove_clock = 0;
         }
 
+        // find en passant target square
         if mov.flags().is_double_push() {
             ret.en_passant_target = mov
                 .from()
@@ -765,9 +916,11 @@ impl Board {
             ret.en_passant_target = Square::invalid();
         }
 
+        // move piece
         *ret.at_mut(mov.to()) = self.at(mov.from());
         *ret.at_mut(mov.from()) = Piece::EMPTY;
 
+        // handle en passant
         if mov.flags().is_en_passant() {
             *ret.at_mut(
                 self.en_passant_target
@@ -776,7 +929,14 @@ impl Board {
             ) = Piece::EMPTY;
         }
 
-        ret.active_color = self.active_color.opponent();
+        // handle castling (note because of move encoding, king has already been moved)
+        if mov.flags().is_castle() {
+            *ret.at_mut(self.active_color.rook_position(mov.flags().castle_side())) = Piece::EMPTY;
+            *ret.at_mut(
+                self.active_color
+                    .castle_position_rook(mov.flags().castle_side()),
+            ) = Piece::rook(self.active_color);
+        }
 
         ret
     }
@@ -885,6 +1045,11 @@ mod test {
     fn expect_move_len(fen: &str, len: usize) {
         let board = Board::from_fen(fen);
         let moves = board.moves();
+        println!("---");
+
+        for mov in moves.iter() {
+            println!("{mov}");
+        }
         assert_eq!(moves.len(), len, "for fen `{fen}`");
     }
 
@@ -894,6 +1059,24 @@ mod test {
         expect_move_len("8/8/8/4r3/3KP3/8/8/8 w - - 0 1", 7);
         expect_move_len("8/8/3r4/2rPr3/2PKP3/8/8/8 w - - 0 1", 5);
         expect_move_len("8/8/8/8/8/8/8/K7 w - - 0 1", 3);
+
+        expect_move_len("8/8/8/8/3k4/8/8/8 b - - 0 1", 8);
+        expect_move_len("8/8/8/8/3kp3/4R3/8/8 b - - 0 1", 7);
+        expect_move_len("8/8/8/2pkp3/2RpR3/3R4/8/8 b - - 0 1", 5);
+        expect_move_len("8/8/8/8/8/8/8/k7 b - - 0 1", 3);
+    }
+
+    #[test]
+    fn move_generation_castle() {
+        expect_move_len("8/8/8/8/8/8/8/R3K2R w KQkq - 0 1", 26);
+        expect_move_len("8/8/8/8/8/8/8/R3K2R w kq - 0 1", 24);
+        expect_move_len("8/8/8/8/8/8/8/R3K2R w Kkq - 0 1", 25);
+        expect_move_len("8/8/8/8/8/8/8/R3K2R w Qkq - 0 1", 25);
+
+        expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQkq - 0 1", 26);
+        expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQ - 0 1", 24);
+        expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQk - 0 1", 25);
+        expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQq - 0 1", 25);
     }
 
     #[test]
