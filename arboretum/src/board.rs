@@ -641,6 +641,30 @@ impl Board {
         }
     }
 
+    fn extend_pseudo_legal_knight_moves_at(
+        &self,
+        pseudo_legal: &mut Vec<Move>,
+        from_square: Square,
+    ) {
+        let deltas = [
+            (-1, -2),
+            (-2, -1),
+            (-1, 2),
+            (2, -1),
+            (1, -2),
+            (-2, 1),
+            (1, 2),
+            (2, 1),
+        ];
+        for (r, f) in deltas {
+            if let Some(to) = from_square.mov(r, f) {
+                if !self.pieces[to.0 as usize].is_color(self.active_color) {
+                    pseudo_legal.push(Move::new(from_square, to));
+                }
+            }
+        }
+    }
+
     pub fn moves(&self) -> Vec<Move> {
         let mut pseudo_legal = vec![];
 
@@ -652,6 +676,8 @@ impl Board {
                     self.extend_pseudo_legal_king_moves_at(&mut pseudo_legal, from_square);
                 } else if piece.is_pawn() {
                     self.extend_pseudo_legal_pawn_moves_at(&mut pseudo_legal, from_square);
+                } else if piece.is_knight() {
+                    self.extend_pseudo_legal_knight_moves_at(&mut pseudo_legal, from_square);
                 }
             }
         }
@@ -830,5 +856,18 @@ mod test {
         expect_move_len("8/3p4/2P1P3/8/8/8/8/8 b - - 0 1", 4);
         expect_move_len("8/1p6/2p5/3p4/4p3/5p2/6p1/8 b - - 0 1", 10);
         expect_move_len("8/8/8/8/5Pp1/8/8/8 b - f3 0 1", 2);
+    }
+
+    #[test]
+    fn move_generation_knight() {
+        expect_move_len("8/8/8/8/4N3/8/8/8 w - - 0 1", 8);
+        expect_move_len("N7/8/8/8/8/8/8/8 w - - 0 1", 2);
+        expect_move_len("8/8/2ppp3/2pNp3/2ppp3/8/8/8 w - - 0 1", 8);
+        expect_move_len("8/8/8/8/4N3/2N5/8/8 w - - 0 1", 14);
+
+        expect_move_len("8/8/8/8/4n3/8/8/8 b - - 0 1", 8);
+        expect_move_len("n7/8/8/8/8/8/8/8 b - - 0 1", 2);
+        expect_move_len("8/8/2PPP3/2PnP3/2PPP3/8/8/8 b - - 0 1", 8);
+        expect_move_len("8/8/8/8/4n3/2n5/8/8 b - - 0 1", 14);
     }
 }

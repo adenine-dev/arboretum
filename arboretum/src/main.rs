@@ -54,12 +54,12 @@ impl TabViewer for AppData {
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         tab.title(self)
-        // tab.to_string().into()
     }
 
     fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
         tab.on_close(self);
-        // don't allow the last tab to close
+
+        // don't allow the last tab to close, we don't have anything to handle opening new tabs lol
         if self.tabs.open.len() <= 1 {
             return false;
         }
