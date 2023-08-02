@@ -84,6 +84,14 @@ impl Piece {
         self.0 == 0
     }
 
+    pub fn moves_diagonal(self) -> bool {
+        self.is_bishop() || self.is_queen()
+    }
+
+    pub fn moves_forthright(self) -> bool {
+        self.is_rook() || self.is_queen()
+    }
+
     pub fn to_algebraic(self) -> &'static str {
         match self {
             Piece::BLACK_ROOK => "r",
@@ -665,6 +673,48 @@ impl Board {
         }
     }
 
+    fn extend_pseudo_legal_slider_moves_at(
+        &self,
+        pseudo_legal: &mut Vec<Move>,
+        from_square: Square,
+        forthright: bool,
+        diagonal: bool,
+    ) {
+        let deltas = [
+            // forthright deltas
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            // diagonal deltas
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+        ];
+
+        let start = if forthright { 0 } else { 4 };
+        let end = if diagonal { 8 } else { 4 };
+
+        for &(dr, df) in deltas[start..end].iter() {
+            for n in 1..=8 {
+                let dr = dr * n;
+                let df = df * n;
+                if let Some(to) = from_square.mov(dr, df) {
+                    if self.pieces[to.0 as usize].is_color(self.active_color) {
+                        break;
+                    }
+                    pseudo_legal.push(Move::new(from_square, to));
+                    if self.pieces[to.0 as usize].is_color(self.active_color.opponent()) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn moves(&self) -> Vec<Move> {
         let mut pseudo_legal = vec![];
 
@@ -678,6 +728,13 @@ impl Board {
                     self.extend_pseudo_legal_pawn_moves_at(&mut pseudo_legal, from_square);
                 } else if piece.is_knight() {
                     self.extend_pseudo_legal_knight_moves_at(&mut pseudo_legal, from_square);
+                } else {
+                    self.extend_pseudo_legal_slider_moves_at(
+                        &mut pseudo_legal,
+                        from_square,
+                        piece.moves_forthright(),
+                        piece.moves_diagonal(),
+                    )
                 }
             }
         }
@@ -869,5 +926,35 @@ mod test {
         expect_move_len("n7/8/8/8/8/8/8/8 b - - 0 1", 2);
         expect_move_len("8/8/2PPP3/2PnP3/2PPP3/8/8/8 b - - 0 1", 8);
         expect_move_len("8/8/8/8/4n3/2n5/8/8 b - - 0 1", 14);
+    }
+
+    #[test]
+    fn move_generation_rook() {
+        expect_move_len("8/8/8/8/8/8/rr6/Rr6 w - - 0 1", 2);
+        expect_move_len("8/8/8/8/8/8/RR6/rR6 b - - 0 1", 2);
+
+        // no matter what in a board with only one rook it will always only be able to move to 14 places
+        let mut board = Board {
+            pieces: [Piece::EMPTY; 64],
+            ..Board::default()
+        };
+
+        for r in 0..8 {
+            for f in 0..8 {
+                *board.get_mut(r, f) = Piece::WHITE_ROOK;
+                let moves = board.moves();
+                assert_eq!(moves.len(), 14);
+                *board.get_mut(r, f) = Piece::EMPTY;
+            }
+        }
+    }
+
+    #[test]
+    fn move_generation_bishop() {
+        expect_move_len("8/8/8/8/8/8/8/B7 w - - 0 1", 7);
+        expect_move_len("8/8/8/8/8/2r5/8/B7 w - - 0 1", 2);
+
+        expect_move_len("8/8/8/8/8/8/8/b7 b - - 0 1", 7);
+        expect_move_len("8/8/8/8/8/2R5/8/b7 b - - 0 1", 2);
     }
 }
