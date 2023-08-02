@@ -33,10 +33,45 @@ impl Piece {
 
     pub const EMPTY: Piece = Piece(0b00_000000);
 
+    pub fn king(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_KING,
+            Color::White => Self::WHITE_KING,
+        }
+    }
+
+    pub fn queen(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_QUEEN,
+            Color::White => Self::WHITE_QUEEN,
+        }
+    }
+
     pub fn rook(color: Color) -> Self {
         match color {
             Color::Black => Self::BLACK_ROOK,
             Color::White => Self::WHITE_ROOK,
+        }
+    }
+
+    pub fn bishop(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_BISHOP,
+            Color::White => Self::WHITE_BISHOP,
+        }
+    }
+
+    pub fn knight(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_KNIGHT,
+            Color::White => Self::WHITE_KNIGHT,
+        }
+    }
+
+    pub fn pawn(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_PAWN,
+            Color::White => Self::WHITE_PAWN,
         }
     }
 
@@ -701,6 +736,29 @@ impl Board {
         &mut self.pieces[square.0 as usize]
     }
 
+    fn under_attack_by(&self, color: Color, square: Square) -> bool {
+        // construct new board
+        let mut board = *self;
+        board.active_color = color; // attacking color
+
+        // place a piece at the attacked square, pawns cannot attack a square if
+        // a piece isn't there. Bit of a hack but meh
+        *board.at_mut(square) = Piece::knight(color.opponent());
+
+        board.moves().into_iter().any(|mov| mov.to() == square)
+    }
+
+    fn in_check(&self, color: Color) -> bool {
+        let king_square = Square::new(
+            self.pieces
+                .iter()
+                .position(|p| p.is_king() && p.is_color(color))
+                .unwrap() as u8,
+        );
+
+        self.under_attack_by(color.opponent(), king_square)
+    }
+
     fn extend_pseudo_legal_king_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
         // basic king movement
         for r in -1..=1 {
@@ -719,7 +777,11 @@ impl Board {
                 .active_color
                 .kingside_castle_path()
                 .into_iter()
-                .all(|square| self.at(square).is_empty())
+                .all(|square| {
+                    self.at(square).is_empty()
+                        && !self.under_attack_by(self.active_color.opponent(), square)
+                })
+            && !self.in_check(self.active_color)
         {
             pseudo_legal.push(Move::new_with_flags(
                 from_square,
@@ -735,7 +797,11 @@ impl Board {
                 .active_color
                 .queenside_castle_path()
                 .into_iter()
-                .all(|square| self.at(square).is_empty())
+                .all(|square| {
+                    self.at(square).is_empty()
+                        && !self.under_attack_by(self.active_color.opponent(), square)
+                })
+            && !self.in_check(self.active_color)
         {
             pseudo_legal.push(Move::new_with_flags(
                 from_square,
@@ -1072,6 +1138,11 @@ mod test {
         expect_move_len("8/8/8/8/8/8/8/R3K2R w kq - 0 1", 24);
         expect_move_len("8/8/8/8/8/8/8/R3K2R w Kkq - 0 1", 25);
         expect_move_len("8/8/8/8/8/8/8/R3K2R w Qkq - 0 1", 25);
+
+        expect_move_len("8/8/8/8/8/8/7p/R3K2R w KQkq - 0 1", 19);
+        expect_move_len("8/8/8/8/8/8/7p/R3K2R w kq - 0 1", 18);
+        expect_move_len("8/8/8/8/8/8/7p/R3K2R w Kkq - 0 1", 18);
+        expect_move_len("8/8/8/8/8/8/7p/R3K2R w Qkq - 0 1", 19);
 
         expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQkq - 0 1", 26);
         expect_move_len("r3k2r/8/8/8/8/8/8/8 b KQ - 0 1", 24);
