@@ -426,7 +426,7 @@ impl std::fmt::Display for Move {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Board {
     pieces: [Piece; 64],
     pub castling_availability: CastlingAvailability,
@@ -558,6 +558,19 @@ impl Board {
         self.pieces[rank as usize * 8 + file as usize]
     }
 
+    #[inline]
+    pub fn get_mut(&mut self, rank: u8, file: u8) -> &mut Piece {
+        &mut self.pieces[rank as usize * 8 + file as usize]
+    }
+
+    pub fn at(&self, square: Square) -> Piece {
+        self.pieces[square.0 as usize]
+    }
+
+    pub fn at_mut(&mut self, square: Square) -> &mut Piece {
+        &mut self.pieces[square.0 as usize]
+    }
+
     fn extend_pseudo_legal_king_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
         for r in -1..=1 {
             for f in -1..=1 {
@@ -626,6 +639,31 @@ impl Board {
         }
 
         pseudo_legal
+    }
+
+    pub fn apply_move(&self, mov: Move) -> Board {
+        let mut ret = *self;
+
+        if self.active_color == Color::Black {
+            ret.fullmoves += 1;
+        }
+
+        // take care of the 50 move rule
+        if !self.at(mov.from()).is_pawn() && self.at(mov.to()).is_empty() {
+            ret.halfmove_clock += 1;
+        } else {
+            ret.halfmove_clock = 0;
+        }
+
+        // ret.pieces[mov.to().0 as usize] = self.pieces[mov.from().0 as usize];
+        // ret.pieces[mov.from().0 as usize] = Piece::EMPTY;
+
+        *ret.at_mut(mov.to()) = self.at(mov.from());
+        *ret.at_mut(mov.from()) = Piece::EMPTY;
+
+        ret.active_color = self.active_color.opponent();
+
+        ret
     }
 }
 
