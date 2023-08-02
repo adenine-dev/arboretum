@@ -1,14 +1,11 @@
 use eframe::{
-    egui::{
-        self, CursorIcon, Id, InnerResponse, Label, LayerId, Order, Painter, RichText, Sense, Ui,
-        WidgetText,
-    },
+    egui::{self, CursorIcon, Id, InnerResponse, LayerId, Order, Sense, Ui, WidgetText},
     emath::Align2,
     epaint::{self, Color32, FontFamily, FontId, Pos2, Rect, Shape, Vec2},
 };
 
 use crate::{
-    board::{Board, Square, FILES, RANKS},
+    board::{Square, FILES, RANKS},
     AppData,
 };
 
@@ -159,11 +156,16 @@ impl PanelT for BoardPanel {
                     if !white_on_bottom {
                         file = 7 - file;
                     }
+                    // for mov in app_data.context.current_moves.iter() {
+                    //     println!("{mov}");
+                    // }
+                    // println!("=============");
                     let drop_move = app_data.context.current_moves.iter().find(|m| {
                         from_square.is_none()
                             || (m.from() == from_square.unwrap()
                                 && m.to() == Square::from_rank_file(rank, file))
                     });
+
                     let can_accept_what_is_being_dragged = drop_move.is_some();
 
                     let response = square_drop_target(
@@ -189,8 +191,8 @@ impl PanelT for BoardPanel {
                                 min
                             };
 
-                            let mut render = |ui: &mut Ui| {
-                                let (response, painter) =
+                            let render = |ui: &mut Ui| {
+                                let (_response, painter) =
                                     ui.allocate_painter(Vec2::splat(size), Sense::click());
 
                                 painter.text(

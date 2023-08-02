@@ -348,37 +348,51 @@ impl std::fmt::Display for Square {
     }
 }
 
-/// represents a promotion target
-/// the bits are `____KBRQ` where:
+/// represents move flags
+/// the bits are `____FFFF` where:
 /// - `_` is an unused bit
-/// - `K` is set if a pawn is promoting to a knight
-/// - `B` is set if a pawn is promoting to a bishop
-/// - `R` is set if a pawn is promoting to a rook
-/// - `Q` is set if a pawn is promoting to a queen
-///
-/// at most one of KBRQ may be set.
-pub struct PromotionTarget(u8);
+/// - `FFFF` are the flags, denoting various properties about the move (see associated constants)
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MoveFlags(u8);
 
-impl PromotionTarget {
-    pub const NONE: PromotionTarget = Self(0b00000000);
-    pub const KNIGHT: PromotionTarget = Self(0b00001000);
-    pub const BISHOP: PromotionTarget = Self(0b00000100);
-    pub const ROOK: PromotionTarget = Self(0b00000010);
-    pub const QUEEN: PromotionTarget = Self(0b00000001);
+impl MoveFlags {
+    pub const NONE: MoveFlags = Self(0b0000);
+
+    pub const PROMOTE_TO_KNIGHT: MoveFlags = Self(0b1000);
+    pub const PROMOTE_TO_BISHOP: MoveFlags = Self(0b0100);
+    pub const PROMOTE_TO_ROOK: MoveFlags = Self(0b0010);
+    pub const PROMOTE_TO_QUEEN: MoveFlags = Self(0b0001);
+
+    pub const CASTLE_QUEENSIDE: MoveFlags = Self(0b0011);
+    pub const CASTLE_KINGSIDE: MoveFlags = Self(0b0101);
+
+    pub const DOUBLE_PUSH: MoveFlags = Self(0b1100);
+    pub const EN_PASSANT: MoveFlags = Self(0b1010);
+
+    pub fn is_promotion(self) -> bool {
+        (self.0 & 0b1111).is_power_of_two()
+    }
+
+    pub fn is_castle(self) -> bool {
+        self == Self::CASTLE_KINGSIDE || self == Self::CASTLE_QUEENSIDE
+    }
+
+    pub fn is_double_push(self) -> bool {
+        self == Self::DOUBLE_PUSH
+    }
+
+    pub fn is_en_passant(self) -> bool {
+        self == Self::EN_PASSANT
+    }
 }
 
 /// 16 bits representing a move
-/// the bits are `FFFFFFTTTTTTKBRQ` where:
+/// the bits are `FFFFFFTTTTTTXXXX` where:
 /// - `FFFFFF` is the index of the from square
 /// - `TTTTTT` is the index of the to square
-/// - `K` is set if a pawn is promoting to a knight
-/// - `B` is set if a pawn is promoting to a bishop
-/// - `R` is set if a pawn is promoting to a rook
-/// - `Q` is set if a pawn is promoting to a queen
+/// - `XXXX` are the flags which may be any of: [`MoveFlags`]
 ///
 /// Castling is represented by the from and to squares being the king's.
-///
-/// At most one of `KBRQ` may be set.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Move(u16);
 
@@ -388,19 +402,15 @@ impl Move {
         let from = from.0 as u16;
         let to = to.0 as u16;
 
-        Self(from << 10 | to << 4)
+        Self(((from & 0b111111) << 10) | ((to & 0b111111) << 4))
     }
 
-    pub fn new_promotion(from: Square, to: Square, promotion_target: PromotionTarget) -> Self {
+    pub fn new_with_flags(from: Square, to: Square, flags: MoveFlags) -> Self {
         assert!(from.valid() && to.valid());
         let from = from.0 as u16;
         let to = to.0 as u16;
 
-        Self(
-            ((from << 10) & 0b111111)
-                | ((to << 4) & 0b111111)
-                | (promotion_target.0 as u16 & 0b1111),
-        )
+        Self(((from & 0b111111) << 10) | ((to & 0b111111) << 4) | (flags.0 as u16 & 0b1111))
     }
 
     pub fn from(self) -> Square {
@@ -411,12 +421,8 @@ impl Move {
         Square::new((self.0 >> 4 & 0b111111) as u8)
     }
 
-    pub fn is_promotion(self) -> bool {
-        self.0 & 0b1111 != 0
-    }
-
-    pub fn get_promotion_target(self) -> PromotionTarget {
-        PromotionTarget((self.0 & 0b1111) as u8)
+    pub fn flags(self) -> MoveFlags {
+        MoveFlags((self.0 & 0b1111) as u8)
     }
 }
 
@@ -597,13 +603,21 @@ impl Board {
                     {
                         if to.rank() == self.active_color.promotion_rank() {
                             pseudo_legal.extend([
-                                Move::new_promotion(from_square, to, PromotionTarget::QUEEN),
-                                Move::new_promotion(from_square, to, PromotionTarget::ROOK),
-                                Move::new_promotion(from_square, to, PromotionTarget::BISHOP),
-                                Move::new_promotion(from_square, to, PromotionTarget::KNIGHT),
+                                Move::new_with_flags(from_square, to, MoveFlags::PROMOTE_TO_QUEEN),
+                                Move::new_with_flags(from_square, to, MoveFlags::PROMOTE_TO_ROOK),
+                                Move::new_with_flags(from_square, to, MoveFlags::PROMOTE_TO_BISHOP),
+                                Move::new_with_flags(from_square, to, MoveFlags::PROMOTE_TO_KNIGHT),
                             ]);
                         } else {
-                            pseudo_legal.push(Move::new(from_square, to));
+                            pseudo_legal.push(Move::new_with_flags(
+                                from_square,
+                                to,
+                                if self.en_passant_target == to {
+                                    MoveFlags::EN_PASSANT
+                                } else {
+                                    MoveFlags::NONE
+                                },
+                            ));
                         }
                     }
                 }
@@ -617,7 +631,11 @@ impl Board {
                         [(to.0 as i8 - (8 * self.active_color.pawn_move_direction())) as usize]
                         .is_empty()
                 {
-                    pseudo_legal.push(Move::new(from_square, to));
+                    pseudo_legal.push(Move::new_with_flags(
+                        from_square,
+                        to,
+                        MoveFlags::DOUBLE_PUSH,
+                    ));
                 }
             }
         }
@@ -655,11 +673,25 @@ impl Board {
             ret.halfmove_clock = 0;
         }
 
-        // ret.pieces[mov.to().0 as usize] = self.pieces[mov.from().0 as usize];
-        // ret.pieces[mov.from().0 as usize] = Piece::EMPTY;
+        if mov.flags().is_double_push() {
+            ret.en_passant_target = mov
+                .from()
+                .mov(self.active_color.pawn_move_direction(), 0)
+                .unwrap();
+        } else {
+            ret.en_passant_target = Square::invalid();
+        }
 
         *ret.at_mut(mov.to()) = self.at(mov.from());
         *ret.at_mut(mov.from()) = Piece::EMPTY;
+
+        if mov.flags().is_en_passant() {
+            *ret.at_mut(
+                self.en_passant_target
+                    .mov(self.active_color.opponent().pawn_move_direction(), 0)
+                    .unwrap(),
+            ) = Piece::EMPTY;
+        }
 
         ret.active_color = self.active_color.opponent();
 
