@@ -156,10 +156,6 @@ impl PanelT for BoardPanel {
                     if !white_on_bottom {
                         file = 7 - file;
                     }
-                    // for mov in app_data.context.current_moves.iter() {
-                    //     println!("{mov}");
-                    // }
-                    // println!("=============");
                     let drop_move = app_data.context.current_moves.iter().find(|m| {
                         from_square.is_none()
                             || (m.from() == from_square.unwrap()
@@ -219,7 +215,12 @@ impl PanelT for BoardPanel {
                                 ui.end_row();
                             };
 
-                            if !piece.is_empty() {
+                            if app_data
+                                .context
+                                .get_player(app_data.context.board.active_color)
+                                .is_human()
+                                && app_data.context.movable[(rank * 8 + file) as usize]
+                            {
                                 drag_source(ui, item_id, render);
                             } else {
                                 render(ui);

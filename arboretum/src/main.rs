@@ -13,9 +13,11 @@ mod context;
 use context::Context;
 
 mod ui;
+use player::Player;
 use ui::*;
 
 mod board;
+mod player;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -99,19 +101,14 @@ impl App {
             }
         }
 
-        let board = Board::default();
         Self {
             app_data: AppData {
-                context: Context {
-                    player_1: "player 1".into(),
-                    player_2: "player 2".into(),
-
-                    current_moves: board.pseudolegal_moves(),
-                    board,
-
-                    white_on_bottom: true,
-                    theme: Theme::default(),
-                },
+                context: Context::new(
+                    Player::new_human(),
+                    Player::new_human(),
+                    Board::default(),
+                    Theme::default(),
+                ),
                 tabs: TabData {
                     open: open_tabs,
                     to_be_added: vec![],

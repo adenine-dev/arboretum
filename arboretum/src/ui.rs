@@ -4,12 +4,12 @@ use eframe::{
 };
 use std::fmt::Display;
 
-mod board;
-use board::*;
-mod players;
-use players::*;
-mod style;
-use style::*;
+mod board_panel;
+use board_panel::*;
+mod players_panel;
+use players_panel::*;
+mod style_editor_panel;
+use style_editor_panel::*;
 
 use crate::AppData;
 
