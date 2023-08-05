@@ -4,7 +4,11 @@
 use std::collections::HashSet;
 
 use board::Board;
-use eframe::{egui, CreationContext, NativeOptions};
+use eframe::{
+    egui::{self, Id},
+    emath::Align2,
+    CreationContext, NativeOptions,
+};
 use egui::{CentralPanel, Frame, Ui, WidgetText};
 
 use egui_dock::{DockArea, Node, NodeIndex, Style, TabViewer, Tree};
@@ -13,11 +17,15 @@ mod context;
 use context::Context;
 
 mod ui;
-use player::Player;
+use egui_toast::{Toast, Toasts};
 use ui::*;
 
 mod board;
+
+mod result;
+
 mod player;
+use player::Player;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -34,6 +42,16 @@ fn main() -> eframe::Result<()> {
 pub struct TabData {
     open: HashSet<Panel>,
     to_be_added: Vec<(NodeIndex, Panel)>,
+    super_focused: Option<Panel>,
+    toasts: Toasts,
+}
+impl TabData {
+    fn clear_toasts(&self, ui: &mut Ui) {
+        ui.data_mut(|ui| {
+            // HACK: egui toasts doesn't allow for clearing of toasts yet, so we have to go into the internals of it.
+            *ui.get_temp_mut_or_default(Id::new("__toasts")) = Vec::<Toast>::new();
+        });
+    }
 }
 
 pub struct AppData {
@@ -50,7 +68,10 @@ impl TabViewer for AppData {
     type Tab = Panel;
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
-        ui.next_widget_position();
+        // ui.next_widget_position();
+        if self.tabs.super_focused.is_some() && *tab != self.tabs.super_focused.unwrap() {
+            ui.set_enabled(false);
+        }
         tab.update(self, ui);
     }
 
@@ -89,7 +110,8 @@ impl App {
     fn new(_cc: &CreationContext) -> Self {
         let mut tree = Tree::new(vec![Panel::Board, Panel::Players]);
 
-        let [_, _] = tree.split_left(NodeIndex::root(), 0.3, vec![Panel::StyleEditor]);
+        let [a, _] = tree.split_left(NodeIndex::root(), 0.15, vec![Panel::StyleEditor]);
+        tree.split_below(a, 0.8, vec![Panel::Position]);
 
         let mut open_tabs = HashSet::new();
 
@@ -112,6 +134,10 @@ impl App {
                 tabs: TabData {
                     open: open_tabs,
                     to_be_added: vec![],
+                    super_focused: None,
+                    toasts: Toasts::new()
+                        .anchor(Align2::LEFT_TOP, (10.0, 10.0))
+                        .direction(egui::Direction::TopDown),
                 },
             },
             tree,
@@ -132,6 +158,7 @@ impl eframe::App for App {
                     self.app_data.tabs.open.insert(tab);
                 }
             });
+        self.app_data.tabs.toasts.show(ctx);
 
         CentralPanel::default()
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0.))

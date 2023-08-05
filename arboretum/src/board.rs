@@ -1,4 +1,6 @@
+use anyhow::Result;
 use rayon::prelude::*;
+use thiserror::Error;
 
 pub const RANKS: [&str; 8] = ["1", "2", "3", "4", "5", "6", "7", "8"];
 pub const FILES: [&str; 8] = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -466,6 +468,30 @@ impl CastlingAvailability {
     }
 }
 
+impl std::fmt::Display for CastlingAvailability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if *self == Self::NONE {
+            return f.write_str("-");
+        }
+
+        if self.contains(Self::WHITE_KINGSIDE) {
+            f.write_str("K")?;
+        }
+        if self.contains(Self::WHITE_QUEENSIDE) {
+            f.write_str("Q")?;
+        }
+
+        if self.contains(Self::BLACK_KINGSIDE) {
+            f.write_str("k")?;
+        }
+        if self.contains(Self::BLACK_QUEENSIDE) {
+            f.write_str("q")?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Represents a square on the board. Stored as a rank-major index
 /// Values >= 64 are invalid.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -666,6 +692,28 @@ impl std::fmt::Display for Move {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum FenParseError {
+    #[error("invalid fen string, missing piece placement data")]
+    MissingPiecePlacementData,
+    #[error("invalid fen string, invalid piece placement data")]
+    InvalidPiecePlacementData,
+    #[error("invalid fen string, missing active color")]
+    MissingActiveColor,
+    #[error("invalid fen string, invalid active color. expected `b` or `w` found {0}")]
+    InvalidActiveColor(String),
+    #[error("invalid fen string, missing castling availability")]
+    MissingCastlingAvailability,
+    #[error("invalid fen string, castling availability is invalid. expected some combination of `K`, `Q`, `k`, and `q` or `-` found `{0}")]
+    InvalidCastlingAvailability(char),
+    #[error("invalid fen string, missing target en passant square")]
+    MissingTargetEnPassantSquare,
+    #[error("invalid fen string, missing halfmove clock")]
+    MissingHalfmoveClock,
+    #[error("invalid fen string, missing fullmove count")]
+    MissingFullmoveCount,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Board {
     pieces: [Piece; 64],
@@ -679,7 +727,7 @@ pub struct Board {
 
 impl Board {
     /// Creates a board from a fen string
-    fn from_fen(fen: &str) -> Self {
+    pub fn from_fen(fen: &str) -> Result<Self> {
         let mut pieces = [Piece::EMPTY; 64];
 
         let mut field_iter = fen.split(' ');
@@ -688,7 +736,7 @@ impl Board {
         let mut rank = 7;
         for c in field_iter
             .next()
-            .expect("invalid fen string could not get piece placement data")
+            .ok_or(FenParseError::MissingPiecePlacementData)?
             .chars()
         {
             let p = match c {
@@ -708,8 +756,7 @@ impl Board {
 
                 '/' => {
                     if file != 8 {
-                        dbg!(file);
-                        panic!("invalid fen: `{fen}`");
+                        return Err(anyhow::Error::new(FenParseError::InvalidPiecePlacementData));
                     }
                     file = 0;
                     rank -= 1;
@@ -723,22 +770,28 @@ impl Board {
                 }
             };
 
+            if file > 7 || rank > 7 {
+                return Err(anyhow::Error::new(FenParseError::InvalidPiecePlacementData));
+            }
+
             pieces[(rank * 8 + file) as usize] = p;
             file += 1;
         }
 
-        let active_color = field_iter
-            .next()
-            .expect("invalid fen string could not get active color");
+        let active_color = field_iter.next().ok_or(FenParseError::MissingActiveColor)?;
         let active_color = match active_color {
             "w" => Color::White,
             "b" => Color::Black,
-            _ => panic!("invalid fen string, active color is invalid. expected `b` or `w` found `{active_color}`"),
+            _ => {
+                return Err(anyhow::Error::new(FenParseError::InvalidActiveColor(
+                    active_color.to_owned(),
+                )))
+            }
         };
 
         let castling_availability = field_iter
             .next()
-            .expect("invalid fen string could not get castling availability");
+            .ok_or(FenParseError::MissingCastlingAvailability)?;
 
         let castling_availability = {
             let mut ca = CastlingAvailability::NONE;
@@ -749,7 +802,11 @@ impl Board {
                         'Q' => ca |= CastlingAvailability::WHITE_QUEENSIDE,
                         'k' => ca |= CastlingAvailability::BLACK_KINGSIDE,
                         'q' => ca |= CastlingAvailability::BLACK_QUEENSIDE,
-                        _ => panic!("invalid fen string, castling availability is invalid. expected some combination of `K`, `Q`, `k`, `q` found `{c}`")
+                        _ => {
+                            return Err(anyhow::Error::new(
+                                FenParseError::InvalidCastlingAvailability(c),
+                            ))
+                        }
                     }
                 }
             }
@@ -759,7 +816,7 @@ impl Board {
 
         let en_passant_target = field_iter
             .next()
-            .expect("invalid fen string could not get en passant target square");
+            .ok_or(FenParseError::MissingTargetEnPassantSquare)?;
         let en_passant_target = if en_passant_target == "-" {
             Square::invalid()
         } else {
@@ -768,24 +825,22 @@ impl Board {
 
         let halfmove_clock = field_iter
             .next()
-            .expect("invalid fen string could not get halfmove clock")
-            .parse()
-            .expect("invalid fen string expected number for halfmove clock");
+            .ok_or(FenParseError::MissingHalfmoveClock)?
+            .parse()?;
 
         let fullmoves = field_iter
             .next()
-            .expect("invalid fen string could not get fullmove number")
-            .parse()
-            .expect("invalid fen string expected number for fullmove number");
+            .ok_or(FenParseError::MissingFullmoveCount)?
+            .parse()?;
 
-        Self {
+        Ok(Self {
             pieces,
             active_color,
             castling_availability,
             en_passant_target,
             halfmove_clock,
             fullmoves,
-        }
+        })
     }
 
     /// Returns the piece at rank, file, both indexed from 0-7 corresponding to 1-8 and a-h respectively
@@ -1151,11 +1206,61 @@ impl Board {
 
         ret
     }
+
+    pub fn make_fen(&self) -> String {
+        let mut piece_placement = String::with_capacity(32); // shortest possible string + a bit extra
+
+        // piece placement data
+        let mut n = 0;
+        for r in 0..8 {
+            for f in 0..8 {
+                let i = (7 - r) * 8 + f;
+                let p = self.pieces[i];
+                if i % 8 == 0 && i != 56 {
+                    if n != 0 {
+                        piece_placement += &n.to_string();
+                        n = 0;
+                    }
+                    piece_placement += "/";
+                }
+                if p.is_empty() {
+                    n += 1;
+                } else {
+                    if n != 0 {
+                        piece_placement += &n.to_string();
+                        n = 0;
+                    }
+                    piece_placement += p.to_algebraic();
+                }
+            }
+        }
+        if n != 0 {
+            piece_placement += &n.to_string();
+        }
+
+        let mut en_passant_target = "-".to_owned();
+        if self.en_passant_target.valid() {
+            en_passant_target = self.en_passant_target.to_string();
+        }
+
+        format!(
+            "{} {} {} {} {} {}",
+            piece_placement,
+            match self.active_color {
+                Color::Black => "b",
+                Color::White => "w",
+            },
+            self.castling_availability,
+            en_passant_target,
+            self.halfmove_clock,
+            self.fullmoves
+        )
+    }
 }
 
 impl Default for Board {
     fn default() -> Self {
-        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
     }
 }
 
@@ -1241,6 +1346,25 @@ mod test {
     }
 
     #[test]
+    fn fen_generation() {
+        let check_same = |fen| {
+            assert_eq!(Board::from_fen(fen).unwrap().make_fen(), fen);
+        };
+        check_same("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        check_same("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1");
+        check_same("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        check_same("rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2");
+        check_same("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
+
+        check_same("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
+        check_same("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+        check_same("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        check_same("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        check_same("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10");
+        check_same("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+    }
+
+    #[test]
     fn square_algebraic_notation_parsing_and_stringify() {
         for (r, &rank) in RANKS.iter().enumerate() {
             for (f, &file) in FILES.iter().enumerate() {
@@ -1254,7 +1378,7 @@ mod test {
     }
 
     fn expect_move_len(fen: &str, len: usize) {
-        let board = Board::from_fen(fen);
+        let board = Board::from_fen(fen).unwrap();
         let moves = board.moves();
 
         for mov in moves.iter() {
@@ -1387,7 +1511,8 @@ mod test {
     #[test]
     fn perft_kiwipete_fastish() {
         let board =
-            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+                .unwrap();
         assert_eq!(board.perft(1, false), 48);
         assert_eq!(board.perft(2, false), 2039);
         assert_eq!(board.perft(3, false), 97862);
@@ -1397,7 +1522,8 @@ mod test {
     #[test]
     fn perft_kiwipete_full() {
         let board =
-            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+                .unwrap();
 
         assert_eq!(board.perft(4, false), 4085603);
         assert_eq!(board.perft(5, false), 193690690);
@@ -1406,7 +1532,7 @@ mod test {
 
     #[test]
     fn perft_position_3_fastish() {
-        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
 
         assert_eq!(board.perft(1, false), 14);
         assert_eq!(board.perft(2, false), 191);
@@ -1419,7 +1545,7 @@ mod test {
     #[ignore]
     #[test]
     fn perft_position_3_full() {
-        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
 
         assert_eq!(board.perft(7, false), 178633661);
         // assert_eq!(board.perft(8, false), 3009794393);
@@ -1428,7 +1554,8 @@ mod test {
     #[test]
     fn perft_position_4_fastish() {
         let board =
-            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1")
+                .unwrap();
         assert_eq!(board.perft(1, false), 6);
         assert_eq!(board.perft(2, false), 264);
         assert_eq!(board.perft(3, false), 9467);
@@ -1440,14 +1567,16 @@ mod test {
     #[test]
     fn perft_position_4_full() {
         let board =
-            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1")
+                .unwrap();
 
         assert_eq!(board.perft(6, false), 706045033);
     }
 
     #[test]
     fn perft_position_5_fastish() {
-        let board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+        let board =
+            Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
         assert_eq!(board.perft(1, false), 44);
         assert_eq!(board.perft(2, false), 1486);
         assert_eq!(board.perft(3, false), 62379);
@@ -1459,7 +1588,8 @@ mod test {
     fn perft_position_6_fastish() {
         let board = Board::from_fen(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
-        );
+        )
+        .unwrap();
         assert_eq!(board.perft(1, false), 46);
         assert_eq!(board.perft(2, false), 2079);
         assert_eq!(board.perft(3, false), 89890);

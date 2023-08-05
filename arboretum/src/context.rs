@@ -11,6 +11,7 @@ pub struct Context {
     pub board: Board,
 
     pub current_moves: Vec<Move>,
+    pub current_fen: String,
     pub movable: [bool; 64],
 
     pub white_on_bottom: bool,
@@ -36,16 +37,22 @@ impl Context {
             white: player_2,
             board,
             movable: make_movable_array(&current_moves),
+            current_fen: board.make_fen(),
             current_moves,
             white_on_bottom: true,
             theme,
         }
     }
 
-    pub fn apply_move(&mut self, mov: Move) {
-        self.board = self.board.apply_move(mov);
+    fn update_extra_board_data(&mut self) {
+        self.current_fen = self.board.make_fen();
         self.current_moves = self.board.moves();
         self.movable = make_movable_array(&self.current_moves);
+    }
+
+    pub fn apply_move(&mut self, mov: Move) {
+        self.board = self.board.apply_move(mov);
+        self.update_extra_board_data()
     }
 
     pub fn get_player(&self, color: Color) -> &Player {
@@ -53,5 +60,14 @@ impl Context {
             Color::Black => &self.black,
             Color::White => &self.white,
         }
+    }
+
+    pub fn set_fen(&mut self, fen: &str) -> anyhow::Result<()> {
+        let new_board = Board::from_fen(fen)?;
+
+        self.board = new_board;
+        self.update_extra_board_data();
+
+        Ok(())
     }
 }

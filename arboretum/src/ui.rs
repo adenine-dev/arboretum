@@ -10,6 +10,8 @@ mod players_panel;
 use players_panel::*;
 mod style_editor_panel;
 use style_editor_panel::*;
+mod position_panel;
+use position_panel::*;
 
 use crate::AppData;
 
@@ -54,6 +56,7 @@ dispatched!(
         Board(BoardPanel),
         Players(PlayersPanel),
         StyleEditor(StyleEditorPanel),
+        Position(PositionPanel),
     }
 
     pub trait PanelT {

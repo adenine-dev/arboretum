@@ -82,12 +82,8 @@ pub fn square_drop_target<R>(
         ui.visuals().widgets.inactive
     };
 
-    let mut fill = bg;
-    let mut stroke = style.bg_stroke;
-    // if is_being_dragged && !can_accept_what_is_being_dragged {
-    //     fill = ui.visuals().gray_out(fill);
-    //     stroke.color = ui.visuals().gray_out(stroke.color);
-    // }
+    let fill = bg;
+    let stroke = style.bg_stroke;
 
     ui.painter().set(
         where_to_put_background,
