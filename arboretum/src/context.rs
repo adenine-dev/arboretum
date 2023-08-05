@@ -20,7 +20,7 @@ pub struct Context {
 
 fn make_movable_array(moves: &[Move]) -> [bool; 64] {
     let mut n = 0;
-    [false; 64].map(|x| {
+    [false; 64].map(|_| {
         let res = moves.iter().any(|mov| mov.from() == Square::new(n));
         n += 1;
         res

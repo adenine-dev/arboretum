@@ -1,7 +1,7 @@
 use eframe::{
     egui::{self, CursorIcon, Id, InnerResponse, LayerId, Order, Sense, Ui, WidgetText},
     emath::Align2,
-    epaint::{self, Color32, FontFamily, FontId, Pos2, Rect, Shape, Vec2},
+    epaint::{self, Color32, FontFamily, FontId, Pos2, Rect, Shape, Stroke, Vec2},
 };
 
 use crate::{
@@ -39,6 +39,7 @@ pub fn drag_source(ui: &mut Ui, id: Id, body: impl FnOnce(&mut Ui)) {
 pub fn square_drop_target<R>(
     ui: &mut Ui,
     can_accept_what_is_being_dragged: bool,
+    is_being_dragged: bool,
     rank: u8,
     file: u8,
     size: f32,
@@ -55,7 +56,7 @@ pub fn square_drop_target<R>(
         (bg, fg)
     };
 
-    let is_being_dragged = ui.memory(|mem| mem.is_anything_being_dragged());
+    // let is_being_dragged = ui.memory(|mem| mem.is_anything_being_dragged());
 
     let min = {
         let mut min = Pos2::new((7 - file) as f32 * size, rank as f32 * size);
@@ -83,10 +84,10 @@ pub fn square_drop_target<R>(
 
     let mut fill = bg;
     let mut stroke = style.bg_stroke;
-    if is_being_dragged && !can_accept_what_is_being_dragged {
-        fill = ui.visuals().gray_out(fill);
-        stroke.color = ui.visuals().gray_out(stroke.color);
-    }
+    // if is_being_dragged && !can_accept_what_is_being_dragged {
+    //     fill = ui.visuals().gray_out(fill);
+    //     stroke.color = ui.visuals().gray_out(stroke.color);
+    // }
 
     ui.painter().set(
         where_to_put_background,
@@ -97,6 +98,15 @@ pub fn square_drop_target<R>(
             rect,
         },
     );
+
+    if is_being_dragged && can_accept_what_is_being_dragged {
+        ui.painter().circle(
+            ((rect.min + rect.max.to_vec2()).to_vec2() * 0.5).to_pos2(),
+            size * 0.25,
+            Color32::WHITE.linear_multiply(0.01),
+            Stroke::NONE,
+        )
+    }
 
     // paint rank/file indicators
     let rank_file_indicator_rank_file = if white_on_bottom { 0 } else { 7 };
@@ -167,6 +177,7 @@ impl PanelT for BoardPanel {
                     let response = square_drop_target(
                         ui,
                         can_accept_what_is_being_dragged,
+                        from_square.is_some(),
                         rank,
                         file,
                         size,
