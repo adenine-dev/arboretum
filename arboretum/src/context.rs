@@ -19,6 +19,6 @@ pub struct Context {
 impl Context {
     pub fn apply_move(&mut self, mov: Move) {
         self.board = self.board.apply_move(mov);
-        self.current_moves = self.board.moves();
+        self.current_moves = self.board.pseudolegal_moves();
     }
 }

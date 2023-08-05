@@ -106,7 +106,7 @@ impl App {
                     player_1: "player 1".into(),
                     player_2: "player 2".into(),
 
-                    current_moves: board.moves(),
+                    current_moves: board.pseudolegal_moves(),
                     board,
 
                     white_on_bottom: true,

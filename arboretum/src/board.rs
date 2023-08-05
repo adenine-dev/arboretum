@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 pub const RANKS: [&str; 8] = ["1", "2", "3", "4", "5", "6", "7", "8"];
 pub const FILES: [&str; 8] = ["a", "b", "c", "d", "e", "f", "g", "h"];
 
@@ -32,6 +34,9 @@ impl Piece {
     pub const BLACK_PAWN: Piece = Piece(0b01_000001);
 
     pub const EMPTY: Piece = Piece(0b00_000000);
+
+    // the dummy is neither color so nothing should process it as a movable piece, but is capturable by all.
+    pub const DUMMY: Piece = Piece(0b00_111111);
 
     pub fn king(color: Color) -> Self {
         match color {
@@ -196,6 +201,14 @@ impl Piece {
             _ => panic!("invalid piece {self}"),
         }
     }
+
+    fn is_capturable_by(self, color: Color) -> bool {
+        self == Self::DUMMY || self.is_color(color.opponent())
+    }
+
+    fn color_can_move_to(self, color: Color) -> bool {
+        self.is_empty() || self.is_capturable_by(color)
+    }
 }
 
 impl std::fmt::Display for Piece {
@@ -285,6 +298,13 @@ impl Color {
         }
     }
 
+    pub fn kingside_knight_position(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 6),
+            Color::White => Square::from_rank_file(0, 6),
+        }
+    }
+
     pub fn queenside_castle_path(self) -> [Square; 2] {
         [
             self.queenside_castle_position_king(),
@@ -313,6 +333,13 @@ impl Color {
         }
     }
 
+    pub fn queenside_knight_position(self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 1),
+            Color::White => Square::from_rank_file(0, 1),
+        }
+    }
+
     pub fn rook_position(self, side: Side) -> Square {
         match side {
             Side::King => self.kingside_rook_position(),
@@ -331,6 +358,13 @@ impl Color {
         match castle_side {
             Side::King => self.kingside_castle_position_king(),
             Side::Queen => self.queenside_castle_position_king(),
+        }
+    }
+
+    fn initial_king_position(&self) -> Square {
+        match self {
+            Color::Black => Square::from_rank_file(7, 4),
+            Color::White => Square::from_rank_file(0, 4),
         }
     }
 }
@@ -384,6 +418,13 @@ impl core::ops::BitXorAssign for CastlingAvailability {
     }
 }
 
+impl core::ops::Not for CastlingAvailability {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self(!self.0)
+    }
+}
+
 impl CastlingAvailability {
     pub const WHITE_KINGSIDE: CastlingAvailability = CastlingAvailability(0b0000_1000);
     pub const WHITE_QUEENSIDE: CastlingAvailability = CastlingAvailability(0b0000_0100);
@@ -396,14 +437,28 @@ impl CastlingAvailability {
         (self & other) == other
     }
 
-    pub fn kingside_color(self, color: Color) -> bool {
+    pub fn kingside_color(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_KINGSIDE,
+            Color::White => Self::WHITE_KINGSIDE,
+        }
+    }
+
+    pub fn queenside_color(color: Color) -> Self {
+        match color {
+            Color::Black => Self::BLACK_QUEENSIDE,
+            Color::White => Self::WHITE_QUEENSIDE,
+        }
+    }
+
+    pub fn has_kingside_with(self, color: Color) -> bool {
         match color {
             Color::Black => self.contains(Self::BLACK_KINGSIDE),
             Color::White => self.contains(Self::WHITE_KINGSIDE),
         }
     }
 
-    pub fn queenside_color(self, color: Color) -> bool {
+    pub fn has_queenside_with(self, color: Color) -> bool {
         match color {
             Color::Black => self.contains(Self::BLACK_QUEENSIDE),
             Color::White => self.contains(Self::WHITE_QUEENSIDE),
@@ -543,6 +598,26 @@ impl MoveFlags {
             Side::Queen
         }
     }
+
+    fn promotion_piece(self, color: Color) -> Piece {
+        assert!(self.is_promotion());
+        match color {
+            Color::Black => match self {
+                MoveFlags::PROMOTE_TO_KNIGHT => Piece::BLACK_KNIGHT,
+                MoveFlags::PROMOTE_TO_BISHOP => Piece::BLACK_BISHOP,
+                MoveFlags::PROMOTE_TO_ROOK => Piece::BLACK_ROOK,
+                MoveFlags::PROMOTE_TO_QUEEN => Piece::BLACK_QUEEN,
+                _ => unreachable!(),
+            },
+            Color::White => match self {
+                MoveFlags::PROMOTE_TO_KNIGHT => Piece::WHITE_KNIGHT,
+                MoveFlags::PROMOTE_TO_BISHOP => Piece::WHITE_BISHOP,
+                MoveFlags::PROMOTE_TO_ROOK => Piece::WHITE_ROOK,
+                MoveFlags::PROMOTE_TO_QUEEN => Piece::WHITE_QUEEN,
+                _ => unreachable!(),
+            },
+        }
+    }
 }
 
 /// 16 bits representing a move
@@ -587,7 +662,7 @@ impl Move {
 
 impl std::fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&(self.from().to_string() + " -> " + &self.to().to_string()))
+        f.write_str(&(self.from().to_string() + &self.to().to_string()))
     }
 }
 
@@ -743,20 +818,25 @@ impl Board {
 
         // place a piece at the attacked square, pawns cannot attack a square if
         // a piece isn't there. Bit of a hack but meh
-        *board.at_mut(square) = Piece::knight(color.opponent());
+        if board.at(square).is_empty() {}
+        *board.at_mut(square) = Piece::DUMMY;
 
-        board.moves().into_iter().any(|mov| mov.to() == square)
+        board
+            .pseudolegal_moves()
+            .into_iter()
+            .any(|mov| mov.to() == square)
     }
 
     fn in_check(&self, color: Color) -> bool {
-        let king_square = Square::new(
-            self.pieces
-                .iter()
-                .position(|p| p.is_king() && p.is_color(color))
-                .unwrap() as u8,
-        );
+        if let Some(king_square) = self
+            .pieces
+            .iter()
+            .position(|p| p.is_king() && p.is_color(color))
+        {
+            return self.under_attack_by(color.opponent(), Square::new(king_square as u8));
+        }
 
-        self.under_attack_by(color.opponent(), king_square)
+        false
     }
 
     fn extend_pseudo_legal_king_moves_at(&self, pseudo_legal: &mut Vec<Move>, from_square: Square) {
@@ -764,7 +844,7 @@ impl Board {
         for r in -1..=1 {
             for f in -1..=1 {
                 if let Some(to) = from_square.mov(r, f) {
-                    if !self.pieces[to.0 as usize].is_color(self.active_color) {
+                    if self.pieces[to.0 as usize].color_can_move_to(self.active_color) {
                         pseudo_legal.push(Move::new(from_square, to));
                     }
                 }
@@ -772,7 +852,9 @@ impl Board {
         }
 
         // castling
-        if self.castling_availability.kingside_color(self.active_color)
+        if self
+            .castling_availability
+            .has_kingside_with(self.active_color)
             && self
                 .active_color
                 .kingside_castle_path()
@@ -780,6 +862,8 @@ impl Board {
                 .all(|square| {
                     self.at(square).is_empty()
                         && !self.under_attack_by(self.active_color.opponent(), square)
+                        && self.at(self.active_color.kingside_rook_position())
+                            == Piece::rook(self.active_color)
                 })
             && !self.in_check(self.active_color)
         {
@@ -792,7 +876,7 @@ impl Board {
 
         if self
             .castling_availability
-            .queenside_color(self.active_color)
+            .has_queenside_with(self.active_color)
             && self
                 .active_color
                 .queenside_castle_path()
@@ -800,6 +884,11 @@ impl Board {
                 .all(|square| {
                     self.at(square).is_empty()
                         && !self.under_attack_by(self.active_color.opponent(), square)
+                        && self
+                            .at(self.active_color.queenside_knight_position())
+                            .is_empty()
+                        && self.at(self.active_color.queenside_rook_position())
+                            == Piece::rook(self.active_color)
                 })
             && !self.in_check(self.active_color)
         {
@@ -820,7 +909,7 @@ impl Board {
                     // can only capture diagonally
                     if (f == 0 && self.pieces[to.0 as usize].is_empty())
                         || (f != 0
-                            && (self.pieces[to.0 as usize].is_color(self.active_color.opponent())
+                            && (self.pieces[to.0 as usize].is_capturable_by(self.active_color)
                                 || self.en_passant_target == to))
                     {
                         if to.rank() == self.active_color.promotion_rank() {
@@ -880,7 +969,7 @@ impl Board {
         ];
         for (r, f) in deltas {
             if let Some(to) = from_square.mov(r, f) {
-                if !self.pieces[to.0 as usize].is_color(self.active_color) {
+                if self.pieces[to.0 as usize].color_can_move_to(self.active_color) {
                     pseudo_legal.push(Move::new(from_square, to));
                 }
             }
@@ -919,7 +1008,7 @@ impl Board {
                         break;
                     }
                     pseudo_legal.push(Move::new(from_square, to));
-                    if self.pieces[to.0 as usize].is_color(self.active_color.opponent()) {
+                    if self.pieces[to.0 as usize].is_capturable_by(self.active_color) {
                         break;
                     }
                 } else {
@@ -929,8 +1018,10 @@ impl Board {
         }
     }
 
-    pub fn moves(&self) -> Vec<Move> {
-        let mut pseudo_legal = vec![];
+    pub fn pseudolegal_moves(&self) -> Vec<Move> {
+        // preallocate vec with some maximum, the maximum legal move count is 218,
+        // this is pseudolegal, but its a good enough estimate.
+        let mut pseudo_legal = Vec::with_capacity(218);
 
         for (idx, piece) in self.pieces.iter().enumerate() {
             let idx = idx;
@@ -954,6 +1045,40 @@ impl Board {
         }
 
         pseudo_legal
+    }
+
+    pub fn moves(&self) -> Vec<Move> {
+        self.pseudolegal_moves()
+            .into_iter()
+            .filter(|&mov| !self.apply_move(mov).in_check(self.active_color))
+            .collect()
+    }
+
+    /// runs the perft function. This is purely used for debugging and testing and should not be
+    /// used as an actual move generator because it is so slow
+    pub fn perft(&self, depth: usize, print: bool) -> u128 {
+        let moves = self.moves();
+
+        if depth == 1 {
+            if print {
+                for mov in moves.iter() {
+                    println!("{mov} 1");
+                }
+            }
+            return moves.len() as u128;
+        }
+
+        moves
+            .into_par_iter()
+            // .into_iter()
+            .map(|mov| {
+                let n = self.apply_move(mov).perft(depth - 1, false);
+                if print {
+                    println!("{mov} {n}");
+                }
+                n
+            })
+            .sum()
     }
 
     pub fn apply_move(&self, mov: Move) -> Board {
@@ -986,6 +1111,11 @@ impl Board {
         *ret.at_mut(mov.to()) = self.at(mov.from());
         *ret.at_mut(mov.from()) = Piece::EMPTY;
 
+        // promotion
+        if mov.flags().is_promotion() {
+            *ret.at_mut(mov.to()) = mov.flags().promotion_piece(self.active_color);
+        }
+
         // handle en passant
         if mov.flags().is_en_passant() {
             *ret.at_mut(
@@ -993,6 +1123,21 @@ impl Board {
                     .mov(self.active_color.opponent().pawn_move_direction(), 0)
                     .unwrap(),
             ) = Piece::EMPTY;
+        }
+
+        // update castling flags
+        if mov.from() == self.active_color.kingside_rook_position()
+            || mov.to() == self.active_color.kingside_rook_position()
+            || mov.from() == self.active_color.initial_king_position()
+        {
+            ret.castling_availability &= !CastlingAvailability::kingside_color(self.active_color);
+        }
+
+        if mov.from() == self.active_color.queenside_rook_position()
+            || mov.to() == self.active_color.queenside_rook_position()
+            || mov.from() == self.active_color.initial_king_position()
+        {
+            ret.castling_availability &= !CastlingAvailability::queenside_color(self.active_color);
         }
 
         // handle castling (note because of move encoding, king has already been moved)
@@ -1111,7 +1256,6 @@ mod test {
     fn expect_move_len(fen: &str, len: usize) {
         let board = Board::from_fen(fen);
         let moves = board.moves();
-        println!("---");
 
         for mov in moves.iter() {
             println!("{mov}");
@@ -1122,12 +1266,12 @@ mod test {
     #[test]
     fn move_generation_king() {
         expect_move_len("8/8/8/8/3K4/8/8/8 w - - 0 1", 8);
-        expect_move_len("8/8/8/4r3/3KP3/8/8/8 w - - 0 1", 7);
+        expect_move_len("8/8/8/4p3/3KP3/8/8/8 w - - 0 1", 7);
         expect_move_len("8/8/3r4/2rPr3/2PKP3/8/8/8 w - - 0 1", 5);
         expect_move_len("8/8/8/8/8/8/8/K7 w - - 0 1", 3);
 
         expect_move_len("8/8/8/8/3k4/8/8/8 b - - 0 1", 8);
-        expect_move_len("8/8/8/8/3kp3/4R3/8/8 b - - 0 1", 7);
+        expect_move_len("8/8/8/8/3kp3/4P3/8/8 b - - 0 1", 7);
         expect_move_len("8/8/8/2pkp3/2RpR3/3R4/8/8 b - - 0 1", 5);
         expect_move_len("8/8/8/8/8/8/8/k7 b - - 0 1", 3);
     }
@@ -1187,7 +1331,7 @@ mod test {
         expect_move_len("8/8/8/8/8/8/rr6/Rr6 w - - 0 1", 2);
         expect_move_len("8/8/8/8/8/8/RR6/rR6 b - - 0 1", 2);
 
-        // no matter what in a board with only one rook it will always only be able to move to 14 places
+        // no matter what, in a board with only one rook it will always only be able to move to 14 places
         let mut board = Board {
             pieces: [Piece::EMPTY; 64],
             ..Board::default()
@@ -1196,7 +1340,7 @@ mod test {
         for r in 0..8 {
             for f in 0..8 {
                 *board.get_mut(r, f) = Piece::WHITE_ROOK;
-                let moves = board.moves();
+                let moves = board.pseudolegal_moves();
                 assert_eq!(moves.len(), 14);
                 *board.get_mut(r, f) = Piece::EMPTY;
             }
@@ -1211,4 +1355,128 @@ mod test {
         expect_move_len("8/8/8/8/8/8/8/b7 b - - 0 1", 7);
         expect_move_len("8/8/8/8/8/2R5/8/b7 b - - 0 1", 2);
     }
+
+    // perft results sourced from: https://www.chessprogramming.org/Perft_Results#Initial_Position
+
+    #[test]
+    fn perft_default_fastish() {
+        let board = Board::default();
+        assert_eq!(board.perft(1, false), 20);
+        assert_eq!(board.perft(2, false), 400);
+        assert_eq!(board.perft(3, false), 8902);
+        assert_eq!(board.perft(4, false), 197281);
+    }
+
+    #[ignore]
+    #[test]
+    fn perft_default_full() {
+        let board = Board::default();
+        assert_eq!(board.perft(5, false), 4865609);
+        assert_eq!(board.perft(6, false), 119060324);
+        // assert_eq!(board.perft(7, false), 3195901860);
+        // assert_eq!(board.perft(8, false), 84998978956);
+        // assert_eq!(board.perft(9, false), 2439530234167);
+        // assert_eq!(board.perft(10, false), 69352859712417);
+        // assert_eq!(board.perft(11, false), 2097651003696806);
+        // assert_eq!(board.perft(12, false), 62854969236701747);
+        // assert_eq!(board.perft(13, false), 1981066775000396239);
+        // assert_eq!(board.perft(14, false), 61885021521585529237);
+        // assert_eq!(board.perft(15, false), 2015099950053364471960);
+    }
+
+    #[test]
+    fn perft_kiwipete_fastish() {
+        let board =
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        assert_eq!(board.perft(1, false), 48);
+        assert_eq!(board.perft(2, false), 2039);
+        assert_eq!(board.perft(3, false), 97862);
+    }
+
+    #[ignore]
+    #[test]
+    fn perft_kiwipete_full() {
+        let board =
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+
+        assert_eq!(board.perft(4, false), 4085603);
+        assert_eq!(board.perft(5, false), 193690690);
+        // assert_eq!(board.perft(6, false), 8031647685);
+    }
+
+    #[test]
+    fn perft_position_3_fastish() {
+        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+
+        assert_eq!(board.perft(1, false), 14);
+        assert_eq!(board.perft(2, false), 191);
+        assert_eq!(board.perft(3, false), 2812);
+        assert_eq!(board.perft(4, false), 43238);
+        assert_eq!(board.perft(5, false), 674624);
+        assert_eq!(board.perft(6, false), 11030083);
+    }
+
+    #[ignore]
+    #[test]
+    fn perft_position_3_full() {
+        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+
+        assert_eq!(board.perft(7, false), 178633661);
+        // assert_eq!(board.perft(8, false), 3009794393);
+    }
+
+    #[test]
+    fn perft_position_4_fastish() {
+        let board =
+            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+        assert_eq!(board.perft(1, false), 6);
+        assert_eq!(board.perft(2, false), 264);
+        assert_eq!(board.perft(3, false), 9467);
+        assert_eq!(board.perft(4, false), 422333);
+        assert_eq!(board.perft(5, false), 15833292);
+    }
+
+    #[ignore]
+    #[test]
+    fn perft_position_4_full() {
+        let board =
+            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+
+        assert_eq!(board.perft(6, false), 706045033);
+    }
+
+    #[test]
+    fn perft_position_5_fastish() {
+        let board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+        assert_eq!(board.perft(1, false), 44);
+        assert_eq!(board.perft(2, false), 1486);
+        assert_eq!(board.perft(3, false), 62379);
+        assert_eq!(board.perft(4, false), 2103487);
+        assert_eq!(board.perft(5, false), 89941194);
+    }
+
+    #[test]
+    fn perft_position_6_fastish() {
+        let board = Board::from_fen(
+            "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+        );
+        assert_eq!(board.perft(1, false), 46);
+        assert_eq!(board.perft(2, false), 2079);
+        assert_eq!(board.perft(3, false), 89890);
+        assert_eq!(board.perft(4, false), 3894594);
+        assert_eq!(board.perft(5, false), 164075551);
+    }
+
+    //NOTE: this is too slow to run on my machine in a reasonable amount of time with current performance
+    // #[ignore]
+    // #[test]
+    // fn perft_position_6_full() {
+    //     let board = Board::from_fen(
+    //         "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+    //     );
+    //     assert_eq!(board.perft(6, false), 6923051137);
+    //     // assert_eq!(board.perft(7, false), 287188994746);
+    //     // assert_eq!(board.perft(8, false), 11923589843526);
+    //     // assert_eq!(board.perft(9, false), 490154852788714);
+    // }
 }
