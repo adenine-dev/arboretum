@@ -62,6 +62,13 @@ impl Context {
         }
     }
 
+    pub fn get_player_mut(&mut self, color: Color) -> &mut Player {
+        match color {
+            Color::Black => &mut self.black,
+            Color::White => &mut self.white,
+        }
+    }
+
     pub fn set_fen(&mut self, fen: &str) -> anyhow::Result<()> {
         let new_board = Board::from_fen(fen)?;
 

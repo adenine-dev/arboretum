@@ -1,4 +1,5 @@
 #![feature(macro_metavar_expr)]
+#![feature(let_chains)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::collections::HashSet;
@@ -21,7 +22,7 @@ use egui_toast::{Toast, Toasts};
 use ui::*;
 
 mod board;
-
+mod process;
 mod result;
 
 mod player;
@@ -108,10 +109,11 @@ impl TabViewer for AppData {
 
 impl App {
     fn new(_cc: &CreationContext) -> Self {
-        let mut tree = Tree::new(vec![Panel::Board, Panel::Players]);
+        let mut tree = Tree::new(vec![Panel::Board]);
 
         let [a, _] = tree.split_left(NodeIndex::root(), 0.15, vec![Panel::StyleEditor]);
-        tree.split_below(a, 0.8, vec![Panel::Position]);
+        let [a, _] = tree.split_below(a, 0.8, vec![Panel::Position]);
+        tree.split_right(a, 0.6, vec![Panel::Players]);
 
         let mut open_tabs = HashSet::new();
 
@@ -127,7 +129,7 @@ impl App {
             app_data: AppData {
                 context: Context::new(
                     Player::new_human(),
-                    Player::new_human(),
+                    Player::new_uci(),
                     Board::default(),
                     Theme::default(),
                 ),
