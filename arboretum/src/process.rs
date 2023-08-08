@@ -66,8 +66,8 @@ impl Process {
         }
     }
 
-    pub fn get_stdout_line(&self) -> Option<String> {
-        match self.stdout_receiver.try_recv() {
+    fn get_stdx_line(receiver: &Receiver<String>) -> Option<String> {
+        match receiver.try_recv() {
             Ok(line) => Some(line),
             Err(err) => {
                 if matches!(err, TryRecvError::Empty) {
@@ -77,6 +77,14 @@ impl Process {
                 }
             }
         }
+    }
+
+    pub fn get_stdout_line(&self) -> Option<String> {
+        Self::get_stdx_line(&self.stdout_receiver)
+    }
+
+    pub fn get_stderr_line(&self) -> Option<String> {
+        Self::get_stdx_line(&self.stderr_receiver)
     }
 
     pub fn send_stdin_line(&self, line: &str) {

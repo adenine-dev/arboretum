@@ -6,7 +6,11 @@ use eframe::{
     epaint::Vec2,
 };
 
-use crate::{board::Color, player::Player, AppData};
+use crate::{
+    board::Color,
+    player::{Player, UciOption},
+    AppData,
+};
 
 use super::PanelT;
 pub struct PlayersPanel {}
@@ -39,9 +43,7 @@ fn display_player(color: Color, app_data: &mut AppData, ui: &mut Ui) {
                     //
                     engine.process.send_stdin_line("uci");
                 }
-                while let Some(line) = engine.process.get_stdout_line() {
-                    engine.stdout.push(line);
-                }
+
                 ui.add_sized(
                     Vec2::new(ui.available_width(), 0.0),
                     egui::TextEdit::multiline(&mut engine.stdout.join("\n"))
@@ -50,6 +52,36 @@ fn display_player(color: Color, app_data: &mut AppData, ui: &mut Ui) {
                         .code_editor()
                         .lock_focus(true),
                 );
+
+                for (name, ty) in engine.options.iter_mut() {
+                    ui.horizontal(|ui| {
+                        //
+                        match ty {
+                            UciOption::Button => {
+                                ui.button(name);
+                            }
+                            UciOption::Check(val) => {
+                                ui.label(name);
+                                ui.checkbox(val, "");
+                            }
+                            UciOption::Combo => {
+                                ui.label(name);
+                                ui.label("combo box goes here...");
+                            }
+                            UciOption::Spin(spin) => {
+                                ui.label(name);
+                                ui.add(
+                                    egui::DragValue::new(&mut spin.value)
+                                        .clamp_range(spin.min..=spin.max),
+                                );
+                            }
+                            UciOption::String(val) => {
+                                ui.label(name);
+                                ui.text_edit_singleline(val);
+                            }
+                        }
+                    });
+                }
 
                 // ui.code();
             }

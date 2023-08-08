@@ -77,4 +77,9 @@ impl Context {
 
         Ok(())
     }
+
+    pub fn tick(&mut self) {
+        self.black.tick();
+        self.white.tick();
+    }
 }
