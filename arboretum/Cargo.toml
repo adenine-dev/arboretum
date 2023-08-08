@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.72"
+bitflags = { version = "2.3.3", features = ["serde"] }
 eframe = { version = "0.22.0", features = ["persistence"] }
 egui-toast = "0.8.0"
 egui_dock = "0.6.3"
 rayon = "1.7.0"
+serde = "1.0.183"
 thiserror = "1.0.44"

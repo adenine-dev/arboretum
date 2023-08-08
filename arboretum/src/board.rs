@@ -237,7 +237,7 @@ impl std::fmt::Display for Piece {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Color {
     White,
     Black,

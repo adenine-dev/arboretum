@@ -46,6 +46,7 @@ pub struct TabData {
     super_focused: Option<Panel>,
     toasts: Toasts,
 }
+
 impl TabData {
     fn clear_toasts(&self, ui: &mut Ui) {
         ui.data_mut(|ui| {
@@ -112,8 +113,8 @@ impl App {
         let mut tree = Tree::new(vec![Panel::Board]);
 
         let [a, _] = tree.split_left(NodeIndex::root(), 0.15, vec![Panel::StyleEditor]);
-        let [a, _] = tree.split_below(a, 0.8, vec![Panel::Position]);
-        tree.split_right(a, 0.6, vec![Panel::Players]);
+        let [a, _] = tree.split_below(a, 0.9, vec![Panel::Position]);
+        tree.split_right(a, 0.56, vec![Panel::Players]);
 
         let mut open_tabs = HashSet::new();
 
@@ -128,7 +129,7 @@ impl App {
         Self {
             app_data: AppData {
                 context: Context::new(
-                    Player::new_human(),
+                    Player::new_uci(),
                     Player::new_uci(),
                     Board::default(),
                     Theme::default(),
