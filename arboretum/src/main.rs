@@ -131,6 +131,8 @@ impl App {
                 context: Context::new(
                     Player::new_uci(),
                     Player::new_uci(),
+                    // Player::new_human(),
+                    // Player::new_human(),
                     Board::default(),
                     Theme::default(),
                 ),
@@ -178,5 +180,7 @@ impl eframe::App for App {
                     .show_add_popup(true)
                     .show_inside(ui, &mut self.app_data);
             });
+
+        ctx.request_repaint();
     }
 }

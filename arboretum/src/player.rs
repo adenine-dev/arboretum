@@ -1,9 +1,11 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::process::Process;
+use crate::{board::Move, process::Process};
 
-pub struct HumanPlayer {}
+pub struct HumanPlayer {
+    pub played_move: Option<Move>,
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UciOptionSpin {
@@ -130,10 +132,12 @@ impl UciOption {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum UciState {
     Booted,
     UciOk,
-    Ready,
+    ReadyOk,
+    InGame,
 }
 
 bitflags! {
@@ -168,6 +172,7 @@ pub struct UciPlayer {
     pub id_author: String,
     pub io: Vec<IoLine>,
     pub options: Vec<UciOption>,
+    pub best_move: Option<Move>,
 }
 
 impl UciPlayer {
@@ -186,6 +191,16 @@ impl UciPlayer {
                 _ => println!("unknown uci command {command}"),
             },
             "uciok" => self.state = UciState::UciOk,
+            "readyok" => self.state = UciState::ReadyOk,
+            "bestmove" => {
+                let mov = param_iter.next().unwrap_or("0000");
+                let mov = Move::from_long_algebraic(mov);
+                //TODO: ponder
+                self.best_move = Some(mov);
+            }
+            "info" => {
+                //TODO: just putting this here to remove the messages
+            }
             "option" => {
                 if let Some(option) = UciOption::new_from_uci_params(line) {
                     self.options.push(option);
@@ -237,7 +252,7 @@ pub enum Player {
 
 impl Player {
     pub fn new_human() -> Self {
-        Self::Human(HumanPlayer {})
+        Self::Human(HumanPlayer { played_move: None })
     }
 
     pub fn is_human(&self) -> bool {
@@ -249,6 +264,7 @@ impl Player {
 
         let mut player = UciPlayer {
             state: UciState::Booted,
+            best_move: None,
             id_name: "".to_owned(),
             id_author: "".to_owned(),
             process,
@@ -258,6 +274,7 @@ impl Player {
         };
 
         player.send_stdin_line("uci".to_owned());
+
         Self::Uci(player)
     }
 
@@ -266,6 +283,71 @@ impl Player {
             Player::Human(_) => {}
             Player::Uci(engine) => {
                 engine.tick();
+            }
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        match self {
+            Player::Human(_) => true,
+            Player::Uci(engine) => engine.state == UciState::ReadyOk,
+        }
+    }
+
+    pub fn is_in_game(&self) -> bool {
+        match self {
+            Player::Human(_) => true,
+            Player::Uci(engine) => engine.state == UciState::InGame,
+        }
+    }
+
+    pub fn ready(&mut self) {
+        match self {
+            Player::Human(_) => {}
+            Player::Uci(engine) => {
+                engine.send_stdin_line("isready".to_owned());
+            }
+        }
+    }
+
+    pub fn start_new_game(&mut self) {
+        match self {
+            Player::Human(_) => {}
+            Player::Uci(engine) => {
+                engine.send_stdin_line("ucinewgame".to_owned());
+                engine.state = UciState::InGame;
+            }
+        }
+    }
+
+    pub fn request_move(&mut self) {
+        match self {
+            Player::Human(_) => {}
+            Player::Uci(engine) => {
+                engine.send_stdin_line("go wtime 1000 btime 1000 winc 0 binc 0".to_owned());
+            }
+        }
+    }
+
+    pub fn get_move(&self) -> Option<Move> {
+        match self {
+            Player::Human(human) => human.played_move,
+            Player::Uci(engine) => engine.best_move,
+        }
+    }
+
+    pub fn take_move(&mut self) -> Option<Move> {
+        match self {
+            Player::Human(human) => human.played_move.take(),
+            Player::Uci(engine) => engine.best_move.take(),
+        }
+    }
+
+    pub fn next_move(&mut self, past_moves: &[String]) {
+        match self {
+            Player::Human(_) => {}
+            Player::Uci(engine) => {
+                engine.send_stdin_line(format!("position startpos moves {}", past_moves.join(" ")))
             }
         }
     }

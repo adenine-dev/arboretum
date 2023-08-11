@@ -1,13 +1,32 @@
 use eframe::egui::{self, Ui, WidgetText};
 use egui_toast::{Toast, ToastKind, ToastOptions};
 
-use crate::AppData;
+use crate::{board::Color, AppData};
 
 use super::{Panel, PanelT};
 pub struct PositionPanel {}
 
 impl PanelT for PositionPanel {
     fn update(app_data: &mut AppData, ui: &mut Ui) {
+        if app_data.context.is_in_game() && !app_data.context.paused {
+            if ui.button("puase").clicked() {
+                app_data.context.pause();
+            }
+        } else if app_data.context.is_in_game() && app_data.context.paused {
+            if ui.button("unpause").clicked() {
+                app_data.context.unpause();
+            }
+        } else if app_data.context.is_ready() {
+            if ui.button("start game").clicked() {
+                app_data.context.start_new_game();
+            }
+        } else {
+            #[allow(clippy::collapsible_else_if)] // for style and clarity
+            if ui.button("make ready").clicked() {
+                app_data.context.ready();
+            }
+        }
+
         ui.horizontal(|ui| {
             ui.strong("fen:");
             if app_data.tabs.super_focused == Some(Panel::Position) {
@@ -76,6 +95,13 @@ impl PanelT for PositionPanel {
 
             ui.end_row()
         });
+
+        if let Some(winner) = &app_data.context.winner {
+            ui.label(match winner.color {
+                Color::Black => "Black wins",
+                Color::White => "White wins",
+            });
+        }
     }
 
     fn title(_app_data: &mut AppData) -> WidgetText {

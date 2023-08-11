@@ -6,6 +6,7 @@ use eframe::{
 
 use crate::{
     board::{Square, FILES, RANKS},
+    player::Player,
     AppData,
 };
 
@@ -245,7 +246,12 @@ impl PanelT for BoardPanel {
 
                 if let Some(&mov) = human_move {
                     if ui.input(|i| i.pointer.any_released()) {
-                        app_data.context.apply_move(mov);
+                        if let Player::Human(human) = app_data
+                            .context
+                            .get_player_mut(app_data.context.board.active_color)
+                        {
+                            human.played_move = Some(mov);
+                        }
 
                         human_move = None;
                         ui.memory_mut(|mem| {

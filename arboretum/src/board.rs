@@ -625,24 +625,27 @@ impl MoveFlags {
         }
     }
 
-    fn promotion_piece(self, color: Color) -> Piece {
-        assert!(self.is_promotion());
+    fn promotion_piece(self, color: Color) -> Option<Piece> {
         match color {
             Color::Black => match self {
-                MoveFlags::PROMOTE_TO_KNIGHT => Piece::BLACK_KNIGHT,
-                MoveFlags::PROMOTE_TO_BISHOP => Piece::BLACK_BISHOP,
-                MoveFlags::PROMOTE_TO_ROOK => Piece::BLACK_ROOK,
-                MoveFlags::PROMOTE_TO_QUEEN => Piece::BLACK_QUEEN,
-                _ => unreachable!(),
+                MoveFlags::PROMOTE_TO_KNIGHT => Some(Piece::BLACK_KNIGHT),
+                MoveFlags::PROMOTE_TO_BISHOP => Some(Piece::BLACK_BISHOP),
+                MoveFlags::PROMOTE_TO_ROOK => Some(Piece::BLACK_ROOK),
+                MoveFlags::PROMOTE_TO_QUEEN => Some(Piece::BLACK_QUEEN),
+                _ => None,
             },
             Color::White => match self {
-                MoveFlags::PROMOTE_TO_KNIGHT => Piece::WHITE_KNIGHT,
-                MoveFlags::PROMOTE_TO_BISHOP => Piece::WHITE_BISHOP,
-                MoveFlags::PROMOTE_TO_ROOK => Piece::WHITE_ROOK,
-                MoveFlags::PROMOTE_TO_QUEEN => Piece::WHITE_QUEEN,
-                _ => unreachable!(),
+                MoveFlags::PROMOTE_TO_KNIGHT => Some(Piece::WHITE_KNIGHT),
+                MoveFlags::PROMOTE_TO_BISHOP => Some(Piece::WHITE_BISHOP),
+                MoveFlags::PROMOTE_TO_ROOK => Some(Piece::WHITE_ROOK),
+                MoveFlags::PROMOTE_TO_QUEEN => Some(Piece::WHITE_QUEEN),
+                _ => None,
             },
         }
+    }
+
+    pub fn contains(self, flags: MoveFlags) -> bool {
+        (self.0 & flags.0) == flags.0
     }
 }
 
@@ -657,6 +660,8 @@ impl MoveFlags {
 pub struct Move(u16);
 
 impl Move {
+    pub const NULLMOVE: Move = Move(0);
+
     pub fn new(from: Square, to: Square) -> Self {
         assert!(from.valid() && to.valid());
         let from = from.0 as u16;
@@ -673,6 +678,32 @@ impl Move {
         Self(((from & 0b111111) << 10) | ((to & 0b111111) << 4) | (flags.0 as u16 & 0b1111))
     }
 
+    pub fn from_long_algebraic(mov: &str) -> Self {
+        if mov == "(none)" || mov == "0000" {
+            return Self::NULLMOVE;
+        }
+
+        assert!(4 <= mov.len() && mov.len() <= 5);
+        let from = &mov[0..2];
+        let to = &mov[2..4];
+
+        let promotion = mov.as_bytes().get(4).copied();
+
+        Self::new_with_flags(
+            Square::from_algebraic(from),
+            Square::from_algebraic(to),
+            promotion
+                .map(|p| match p {
+                    b'q' => MoveFlags::PROMOTE_TO_QUEEN,
+                    b'r' => MoveFlags::PROMOTE_TO_ROOK,
+                    b'b' => MoveFlags::PROMOTE_TO_BISHOP,
+                    b'k' => MoveFlags::PROMOTE_TO_KNIGHT,
+                    _ => panic!("oof"),
+                })
+                .unwrap_or(MoveFlags::NONE),
+        )
+    }
+
     pub fn from(self) -> Square {
         Square::new((self.0 >> 10 & 0b111111) as u8)
     }
@@ -683,6 +714,18 @@ impl Move {
 
     pub fn flags(self) -> MoveFlags {
         MoveFlags((self.0 & 0b1111) as u8)
+    }
+
+    pub(crate) fn to_long_algebraic(self) -> String {
+        format!(
+            "{}{}{}",
+            self.from(),
+            self.to(),
+            self.flags()
+                .promotion_piece(Color::Black)
+                .map(|p| p.to_algebraic())
+                .unwrap_or("")
+        )
     }
 }
 
@@ -1168,7 +1211,7 @@ impl Board {
 
         // promotion
         if mov.flags().is_promotion() {
-            *ret.at_mut(mov.to()) = mov.flags().promotion_piece(self.active_color);
+            *ret.at_mut(mov.to()) = mov.flags().promotion_piece(self.active_color).unwrap();
         }
 
         // handle en passant
